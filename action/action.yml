@@ -2,8 +2,12 @@ name: "Sift PR Review"
 description: "LLM-assisted commit triage for pull requests — surfaces security-relevant findings for maintainer review"
 
 inputs:
+  profile:
+    description: "Named profile (overrides provider/model/effort/verifier_count). Available: maintainer_review_v1, maintainer_review_fast_v1, maintainer_review_max_v1"
+    required: false
+    default: ""
   provider:
-    description: "LLM provider: anthropic or ollama"
+    description: "LLM provider: anthropic or ollama (ignored when profile is set)"
     required: false
     default: "anthropic"
   api_key:
@@ -90,9 +94,14 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         mkdir -p artifacts
+        PROFILE_ARG=""
+        if [ -n "${{ inputs.profile }}" ]; then
+          PROFILE_ARG="--profile ${{ inputs.profile }}"
+        fi
         python3 -m sift.cli.analyze_pr \
           --repo-path "$GITHUB_WORKSPACE" \
           --event-json "$GITHUB_EVENT_PATH" \
+          $PROFILE_ARG \
           --runner "${{ inputs.provider }}" \
           --anthropic-model "${{ inputs.model }}" \
           --anthropic-thinking "${{ inputs.thinking }}" \

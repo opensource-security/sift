@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from sift.profiles import get_profile, list_profiles
 from sift.runtime.analysis import RunnerConfig, ResultPolicy, analyze_commit
 from sift.runtime.providers import (
     ANTHROPIC_DEFAULT_EFFORT,
@@ -26,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sift-commit",
         description="Analyze a single commit for security-relevant findings",
+    )
+    parser.add_argument(
+        "--profile",
+        default="",
+        help=f"Named profile (overrides runner/model/effort flags). Available: {', '.join(list_profiles())}",
     )
     parser.add_argument("--repo-path", required=True, help="Path to a local checkout or bare mirror")
     parser.add_argument("--sha", required=True, help="Commit SHA to analyze")
@@ -71,33 +77,52 @@ def main() -> None:
 
     full_history_repo_path = Path(args.full_history_repo_path) if args.full_history_repo_path else None
 
-    runner_config = RunnerConfig(
-        runner=args.runner,
-        ollama_model=args.ollama_model,
-        ollama_ssh_target=args.ollama_ssh_target,
-        ollama_timeout_sec=args.ollama_timeout_sec,
-        anthropic_model=args.anthropic_model,
-        anthropic_timeout_sec=args.anthropic_timeout_sec,
-        anthropic_thinking=args.anthropic_thinking,
-        anthropic_effort=args.anthropic_effort,
-        anthropic_tool_mode=args.anthropic_tool_mode,
-        anthropic_max_tool_rounds=args.anthropic_max_tool_rounds,
-        anthropic_max_total_tokens=args.anthropic_max_total_tokens,
-        verifier_count=args.verifier_count,
-        benign_challenge_mode=args.benign_challenge_mode,
-    )
+    if args.profile:
+        profile = get_profile(args.profile)
+        runner_config = profile.runner_config
+        result_policy = profile.result_policy
+        max_patch_chars = profile.max_patch_chars
+        max_files = profile.max_files
+        max_author_commits = profile.max_author_commits
+        max_path_commits = profile.max_path_commits
+        max_paths_for_history = profile.max_paths_for_history
+        max_ref_history_commits = profile.max_ref_history_commits
+    else:
+        runner_config = RunnerConfig(
+            runner=args.runner,
+            ollama_model=args.ollama_model,
+            ollama_ssh_target=args.ollama_ssh_target,
+            ollama_timeout_sec=args.ollama_timeout_sec,
+            anthropic_model=args.anthropic_model,
+            anthropic_timeout_sec=args.anthropic_timeout_sec,
+            anthropic_thinking=args.anthropic_thinking,
+            anthropic_effort=args.anthropic_effort,
+            anthropic_tool_mode=args.anthropic_tool_mode,
+            anthropic_max_tool_rounds=args.anthropic_max_tool_rounds,
+            anthropic_max_total_tokens=args.anthropic_max_total_tokens,
+            verifier_count=args.verifier_count,
+            benign_challenge_mode=args.benign_challenge_mode,
+        )
+        result_policy = None
+        max_patch_chars = args.max_patch_chars
+        max_files = args.max_files
+        max_author_commits = args.max_author_commits
+        max_path_commits = args.max_path_commits
+        max_paths_for_history = args.max_paths_for_history
+        max_ref_history_commits = args.max_ref_history_commits
 
     payload = analyze_commit(
         Path(args.repo_path),
         args.sha,
         args.ref,
         runner_config=runner_config,
+        result_policy=result_policy if args.profile else None,
         observed_at=args.observed_at or now_utc_iso(),
         repo=args.repo,
-        max_patch_chars=args.max_patch_chars,
-        max_files=args.max_files,
-        max_author_commits=args.max_author_commits,
-        max_path_commits=args.max_path_commits,
+        max_patch_chars=max_patch_chars,
+        max_files=max_files,
+        max_author_commits=max_author_commits,
+        max_path_commits=max_path_commits,
         max_paths_for_history=args.max_paths_for_history,
         max_ref_history_commits=args.max_ref_history_commits,
         gharchive_mode=args.gharchive_mode,

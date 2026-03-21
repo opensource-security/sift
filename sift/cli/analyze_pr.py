@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from sift.profiles import get_profile, list_profiles
 from sift.runtime.analysis import RunnerConfig, ResultPolicy, analyze_commit
 from sift.runtime.benign_challenger import should_sample_benign_challenge
 from sift.runtime.pr_social import build_current_pr_social_history
@@ -67,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sift-pr",
         description="Analyze commits introduced by a pull request",
+    )
+    parser.add_argument(
+        "--profile",
+        default="",
+        help=f"Named profile (overrides runner/model/effort flags). Available: {', '.join(list_profiles())}",
     )
     parser.add_argument("--repo-path", required=True)
     parser.add_argument("--event-json", default="", help="GitHub pull_request event payload")
@@ -209,20 +215,24 @@ def main() -> None:
     if not commits:
         raise SystemExit("no commits found in PR range")
 
-    runner_config = RunnerConfig(
-        runner=args.runner,
-        ollama_model=args.ollama_model,
-        ollama_ssh_target=args.ollama_ssh_target,
-        ollama_timeout_sec=args.ollama_timeout_sec,
-        anthropic_model=args.anthropic_model,
-        anthropic_timeout_sec=args.anthropic_timeout_sec,
-        anthropic_thinking=args.anthropic_thinking,
-        anthropic_effort=args.anthropic_effort,
-        anthropic_tool_mode=args.anthropic_tool_mode,
-        anthropic_max_tool_rounds=args.anthropic_max_tool_rounds,
-        anthropic_max_total_tokens=args.anthropic_max_total_tokens,
-        verifier_count=args.verifier_count,
-    )
+    if args.profile:
+        profile = get_profile(args.profile)
+        runner_config = profile.runner_config
+    else:
+        runner_config = RunnerConfig(
+            runner=args.runner,
+            ollama_model=args.ollama_model,
+            ollama_ssh_target=args.ollama_ssh_target,
+            ollama_timeout_sec=args.ollama_timeout_sec,
+            anthropic_model=args.anthropic_model,
+            anthropic_timeout_sec=args.anthropic_timeout_sec,
+            anthropic_thinking=args.anthropic_thinking,
+            anthropic_effort=args.anthropic_effort,
+            anthropic_tool_mode=args.anthropic_tool_mode,
+            anthropic_max_tool_rounds=args.anthropic_max_tool_rounds,
+            anthropic_max_total_tokens=args.anthropic_max_total_tokens,
+            verifier_count=args.verifier_count,
+        )
 
     pr_social_history: dict[str, Any] | None = None
     if args.pr_social_mode == "current_pr":
