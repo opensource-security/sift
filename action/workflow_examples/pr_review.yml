@@ -1,0 +1,44 @@
+# Example workflow: Sift PR Review
+#
+# Add this to .github/workflows/ in your repository.
+#
+# IMPORTANT: This workflow uses pull_request_target so that it can access
+# repository secrets (ANTHROPIC_API_KEY) while analyzing untrusted PRs.
+# It checks out the BASE branch for workflow code and only fetches PR head
+# objects for read-only analysis. PR code is never executed.
+
+name: Sift PR Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  checks: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: sift-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout base branch (not PR code)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      - name: Run Sift
+        uses: opensource-security/sift/action@v1
+        with:
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # model: claude-sonnet-4-20250514    # default
+          # effort: high                       # default
+          # verifier_count: 3                  # default
+          # pr_social_mode: off                # set to current_pr for PR metadata enrichment

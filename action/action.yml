@@ -1,0 +1,154 @@
+name: "Sift PR Review"
+description: "LLM-assisted commit triage for pull requests — surfaces security-relevant findings for maintainer review"
+
+inputs:
+  provider:
+    description: "LLM provider: anthropic or ollama"
+    required: false
+    default: "anthropic"
+  api_key:
+    description: "Provider API key (e.g. Anthropic API key)"
+    required: true
+  model:
+    description: "Model ID to use"
+    required: false
+    default: "claude-sonnet-4-20250514"
+  thinking:
+    description: "Thinking mode: adaptive or off"
+    required: false
+    default: "adaptive"
+  effort:
+    description: "Model effort level: low, medium, high, max"
+    required: false
+    default: "high"
+  max_commits:
+    description: "Maximum number of PR commits to analyze (0 = no limit)"
+    required: false
+    default: "0"
+  verifier_count:
+    description: "Number of verifier variants per finding"
+    required: false
+    default: "3"
+  pr_social_mode:
+    description: "PR metadata enrichment: off or current_pr"
+    required: false
+    default: "off"
+  tool_mode:
+    description: "Model tool access: none or readonly"
+    required: false
+    default: "readonly"
+  artifact_retention:
+    description: "Days to retain uploaded artifacts"
+    required: false
+    default: "30"
+
+outputs:
+  artifact_path:
+    description: "Path to the JSON analysis artifact"
+    value: ${{ steps.analyze.outputs.artifact_path }}
+  summary_path:
+    description: "Path to the markdown summary"
+    value: ${{ steps.render.outputs.summary_path }}
+  commits_analyzed:
+    description: "Number of commits analyzed"
+    value: ${{ steps.analyze.outputs.commits_analyzed }}
+  surviving_findings:
+    description: "Number of findings that survived verification"
+    value: ${{ steps.analyze.outputs.surviving_findings }}
+  review_recommended:
+    description: "Whether maintainer review is recommended"
+    value: ${{ steps.analyze.outputs.review_recommended }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install sift
+      shell: bash
+      run: pip install --quiet "${{ github.action_path }}/.."
+
+    - name: Fetch PR head objects (without checking out PR code)
+      shell: bash
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        # Security: only fetch git objects from the PR head — never check out
+        # or execute code from the PR branch. Analysis is read-only.
+        git fetch --no-tags --prune origin \
+          +refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr/${PR_NUMBER}/head
+        git cat-file -e "${{ github.event.pull_request.head.sha }}^{commit}"
+
+    - name: Analyze PR commits
+      id: analyze
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.api_key }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        mkdir -p artifacts
+        python3 -m sift.cli.analyze_pr \
+          --repo-path "$GITHUB_WORKSPACE" \
+          --event-json "$GITHUB_EVENT_PATH" \
+          --runner "${{ inputs.provider }}" \
+          --anthropic-model "${{ inputs.model }}" \
+          --anthropic-thinking "${{ inputs.thinking }}" \
+          --anthropic-effort "${{ inputs.effort }}" \
+          --verifier-count "${{ inputs.verifier_count }}" \
+          --pr-social-mode "${{ inputs.pr_social_mode }}" \
+          --anthropic-tool-mode "${{ inputs.tool_mode }}" \
+          --limit-commits "${{ inputs.max_commits }}" \
+          --output artifacts/sift_pr_analysis.json \
+          | tee /tmp/sift_output.txt
+
+        echo "artifact_path=artifacts/sift_pr_analysis.json" >> "$GITHUB_OUTPUT"
+
+        # Parse counts from sift output
+        commits=$(grep -oP 'commits=\K\d+' /tmp/sift_output.txt || echo "0")
+        surviving=$(grep -oP 'surviving_findings=\K\d+' /tmp/sift_output.txt || echo "0")
+        echo "commits_analyzed=$commits" >> "$GITHUB_OUTPUT"
+        echo "surviving_findings=$surviving" >> "$GITHUB_OUTPUT"
+        if [ "$surviving" -gt "0" ]; then
+          echo "review_recommended=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "review_recommended=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Render markdown summary
+      id: render
+      shell: bash
+      run: |
+        python3 -m sift.render.github_summary \
+          --input artifacts/sift_pr_analysis.json \
+          --output artifacts/sift_pr_summary.md
+        cat artifacts/sift_pr_summary.md >> "$GITHUB_STEP_SUMMARY"
+        echo "summary_path=artifacts/sift_pr_summary.md" >> "$GITHUB_OUTPUT"
+
+    - name: Post check run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        DETAILS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        python3 -m sift.render.github_check \
+          --input artifacts/sift_pr_analysis.json \
+          --details-url "$DETAILS_URL" \
+          --output artifacts/sift_pr_check.json
+        gh api \
+          --method POST \
+          -H "Accept: application/vnd.github+json" \
+          repos/${{ github.repository }}/check-runs \
+          --input artifacts/sift_pr_check.json
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: sift-pr-${{ github.event.pull_request.number }}
+        retention-days: ${{ inputs.artifact_retention }}
+        path: |
+          artifacts/sift_pr_analysis.json
+          artifacts/sift_pr_summary.md
+          artifacts/sift_pr_check.json
