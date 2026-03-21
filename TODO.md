@@ -7,8 +7,8 @@
 ## Next steps (from implementation plan)
 
 - [ ] End-to-end action test on a real PR (blocked by billing above)
-- [ ] Add thin `store.py` to sift (optional SQLite persistence adapter)
+- [x] Add thin `store.py` to sift (optional SQLite persistence adapter)
 - [ ] Set up uv in stars, add sift as git dependency
 - [ ] Remove duplicated runtime modules from stars once consuming sift via uv
-- [ ] Named profiles in sift (`maintainer_review_v1`, `maintainer_review_fast_v1`)
+- [x] Named profiles in sift (`maintainer_review_v1`, `maintainer_review_fast_v1`, `maintainer_review_max_v1`)
 - [ ] Flip sift to public, add README, tag v1
