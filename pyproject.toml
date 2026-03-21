@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "sift"
+version = "0.1.0"
+description = "LLM-assisted commit triage for supply-chain security"
+requires-python = ">=3.10"
+
+[project.scripts]
+sift-commit = "sift.cli.analyze_commit:main"
+sift-pr = "sift.cli.analyze_pr:main"
