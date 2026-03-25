@@ -461,8 +461,9 @@ def render_verifier_evidence(case: CommitCase) -> str:
     return "\n".join(lines)
 
 
-def build_verifier_prompt(case: CommitCase, finding: Finding, variant: dict[str, str]) -> str:
-    evidence_block = render_verifier_evidence(case)
+def build_verifier_prompt(case: CommitCase, finding: Finding, variant: dict[str, str], *, evidence_block: str = "", exclude_evidence: bool = False) -> str:
+    if not evidence_block and not exclude_evidence:
+        evidence_block = render_verifier_evidence(case)
     evidence_refs = ", ".join(finding.get("evidence_refs", []) or ["none"])
     lines: list[str] = []
     lines.append("You are a verifier reviewing a candidate supply-chain triage finding.")
@@ -494,8 +495,9 @@ def build_verifier_prompt(case: CommitCase, finding: Finding, variant: dict[str,
     if primary_signals:
         lines.append(f"- Primary signals: {json.dumps(primary_signals)}")
     lines.append("")
-    lines.append(evidence_block)
-    lines.append("")
+    if evidence_block:
+        lines.append(evidence_block)
+        lines.append("")
     lines.append("Respond in this exact format:")
     lines.append("**Outcome**: [verify/disprove/abstain]")
     lines.append("**Confidence**: [low/medium/high]")
@@ -509,8 +511,12 @@ def build_commit_judgment_verifier_prompt(
     primary_result: dict[str, Any],
     findings: list[Finding],
     variant: dict[str, str],
+    *,
+    evidence_block: str = "",
+    exclude_evidence: bool = False,
 ) -> str:
-    evidence_block = render_verifier_evidence(case)
+    if not evidence_block and not exclude_evidence:
+        evidence_block = render_verifier_evidence(case)
     classification = str(primary_result.get("classification") or "").strip().lower()
     confidence = str(primary_result.get("confidence") or "").strip().lower() or "unknown"
     reasoning = str(primary_result.get("reasoning") or "").strip()
@@ -552,8 +558,9 @@ def build_commit_judgment_verifier_prompt(
                 f"claim={finding.get('claim', '')}"
             )
     lines.append("")
-    lines.append(evidence_block)
-    lines.append("")
+    if evidence_block:
+        lines.append(evidence_block)
+        lines.append("")
     lines.append("Respond in this exact format:")
     lines.append("**Outcome**: [verify/disprove/abstain]")
     lines.append("**Confidence**: [low/medium/high]")

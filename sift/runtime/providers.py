@@ -130,10 +130,18 @@ def anthropic_complete(
     tool_runner: Callable[[str, dict[str, Any]], Any] | None = None,
     max_tool_rounds: int = 0,
     max_total_tokens: int = 500000,
+    cached_prefix: str = "",
 ) -> dict[str, Any]:
     temperature = 1 if thinking_mode == "adaptive" else 0
+    if cached_prefix:
+        user_content: list[dict[str, Any]] = [
+            {"type": "text", "text": cached_prefix, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        user_content = [{"type": "text", "text": prompt}]
     messages: list[dict[str, Any]] = [
-        {"role": "user", "content": [{"type": "text", "text": prompt}]}
+        {"role": "user", "content": user_content}
     ]
     total_usage = {"input_tokens": 0, "output_tokens": 0}
     tool_trace: list[dict[str, Any]] = []
@@ -149,6 +157,7 @@ def anthropic_complete(
                 "Content-Type": "application/json",
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
+                "anthropic-beta": "prompt-caching-2024-07-31",
             },
             method="POST",
         )
@@ -348,6 +357,7 @@ def run_text_prompt(
     anthropic_tool_runner: Callable[[str, dict[str, Any]], Any] | None = None,
     anthropic_max_tool_rounds: int = 0,
     anthropic_max_total_tokens: int = 500000,
+    cached_prefix: str = "",
 ) -> dict[str, Any]:
     if runner_name == "ollama":
         return ollama_complete(
@@ -370,6 +380,7 @@ def run_text_prompt(
             tool_runner=anthropic_tool_runner,
             max_tool_rounds=anthropic_max_tool_rounds,
             max_total_tokens=anthropic_max_total_tokens,
+            cached_prefix=cached_prefix,
         )
     return {
         "ok": False,

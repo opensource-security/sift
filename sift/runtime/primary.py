@@ -45,8 +45,9 @@ def default_evidence_refs(case: CommitCase) -> list[str]:
     return refs
 
 
-def build_primary_findings_prompt(case: CommitCase) -> str:
-    evidence_block = render_verifier_evidence(case)
+def build_primary_findings_prompt(case: CommitCase, *, evidence_block: str = "", exclude_evidence: bool = False) -> str:
+    if not evidence_block and not exclude_evidence:
+        evidence_block = render_verifier_evidence(case)
     allowed_refs = [
         "commit.message",
         "commit.files_changed",
@@ -101,8 +102,9 @@ def build_primary_findings_prompt(case: CommitCase) -> str:
     lines.append(f"Allowed suggested_action values: {', '.join(sorted(PRIMARY_ACTIONS))}")
     lines.append(f"Preferred evidence_refs values: {', '.join(allowed_refs)}")
     lines.append("")
-    lines.append(evidence_block)
-    lines.append("")
+    if evidence_block:
+        lines.append(evidence_block)
+        lines.append("")
     lines.append("Return strict JSON only. No markdown fences.")
     lines.append("Schema:")
     lines.append(

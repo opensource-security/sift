@@ -44,6 +44,7 @@ from .verifier import (
     build_commit_judgment_verifier_prompt,
     build_verifier_prompt,
     parse_verifier_response,
+    render_verifier_evidence,
     summarize_verifier_votes,
 )
 
@@ -173,6 +174,7 @@ def _run_text_prompt_with_config(
     max_tokens: int = 16000,
     anthropic_tools: list[dict[str, Any]] | None = None,
     anthropic_tool_runner: Callable[[str, dict[str, Any]], Any] | None = None,
+    cached_prefix: str = "",
 ) -> dict[str, Any]:
     return run_text_prompt(
         prompt,
@@ -190,6 +192,7 @@ def _run_text_prompt_with_config(
         anthropic_tool_runner=anthropic_tool_runner,
         anthropic_max_tool_rounds=config.anthropic_max_tool_rounds,
         anthropic_max_total_tokens=config.anthropic_max_total_tokens,
+        cached_prefix=cached_prefix,
     )
 
 
@@ -201,6 +204,7 @@ def _run_verifier_vote(
     *,
     anthropic_tools: list[dict[str, Any]] | None,
     anthropic_tool_runner: Any,
+    evidence_block: str = "",
 ) -> dict[str, Any]:
     if config.runner == "heuristic":
         heuristic_predict, _, _ = _get_replay_runners()
@@ -238,12 +242,13 @@ def _run_verifier_vote(
             "independence": "oracle_passthrough",
         }
 
-    prompt = build_verifier_prompt(case, finding, variant)
+    prompt = build_verifier_prompt(case, finding, variant, exclude_evidence=bool(evidence_block))
     completion = _run_text_prompt_with_config(
         prompt + "\n",
         config,
         anthropic_tools=anthropic_tools,
         anthropic_tool_runner=anthropic_tool_runner,
+        cached_prefix=evidence_block,
     )
     _abort_if_auth_error(completion)
     if not completion.get("ok"):
@@ -285,6 +290,7 @@ def _run_commit_judgment_vote(
     *,
     anthropic_tools: list[dict[str, Any]] | None,
     anthropic_tool_runner: Any,
+    evidence_block: str = "",
 ) -> dict[str, Any]:
     classification = str(primary_result.get("classification") or "").strip().lower()
     if config.runner == "heuristic":
@@ -339,12 +345,13 @@ def _run_commit_judgment_vote(
             "independence": "oracle_passthrough",
         }
 
-    prompt = build_commit_judgment_verifier_prompt(case, primary_result, findings, variant)
+    prompt = build_commit_judgment_verifier_prompt(case, primary_result, findings, variant, exclude_evidence=bool(evidence_block))
     completion = _run_text_prompt_with_config(
         prompt + "\n",
         config,
         anthropic_tools=anthropic_tools,
         anthropic_tool_runner=anthropic_tool_runner,
+        cached_prefix=evidence_block,
     )
     _abort_if_auth_error(completion)
     if not completion.get("ok"):
@@ -385,6 +392,7 @@ def _run_primary_result(
     *,
     anthropic_tools: list[dict[str, Any]] | None,
     anthropic_tool_runner: Any,
+    evidence_block: str = "",
 ) -> dict[str, Any]:
     if config.runner in {"heuristic", "oracle"}:
         _, _, run_runner = _get_replay_runners()
@@ -408,12 +416,13 @@ def _run_primary_result(
         prediction["raw_response_payloads"] = []
         return prediction
 
-    prompt = build_primary_findings_prompt(case)
+    prompt = build_primary_findings_prompt(case, exclude_evidence=bool(evidence_block))
     completion = _run_text_prompt_with_config(
         prompt + "\n",
         config,
         anthropic_tools=anthropic_tools,
         anthropic_tool_runner=anthropic_tool_runner,
+        cached_prefix=evidence_block,
     )
     _abort_if_auth_error(completion)
     if not completion.get("ok"):
@@ -475,6 +484,7 @@ def _run_benign_challenge(
     *,
     anthropic_tools: list[dict[str, Any]] | None,
     anthropic_tool_runner: Any,
+    evidence_block: str = "",
 ) -> dict[str, Any]:
     if config.benign_challenge_mode == "off":
         return _default_benign_challenge_result(config.benign_challenge_mode, "disabled")
@@ -483,12 +493,13 @@ def _run_benign_challenge(
     if config.runner in {"heuristic", "oracle"}:
         return _default_benign_challenge_result(config.benign_challenge_mode, "unsupported_runner")
 
-    prompt = build_benign_challenge_prompt(case)
+    prompt = build_benign_challenge_prompt(case, exclude_evidence=bool(evidence_block))
     completion = _run_text_prompt_with_config(
         prompt + "\n",
         config,
         anthropic_tools=anthropic_tools,
         anthropic_tool_runner=anthropic_tool_runner,
+        cached_prefix=evidence_block,
     )
     _abort_if_auth_error(completion)
     if not completion.get("ok"):
@@ -634,11 +645,15 @@ def analyze_commit(
         anthropic_tools = anthropic_readonly_repo_tools()
         anthropic_tool_runner = make_repo_tool_runner(case)
 
+    # Pre-render evidence once for prompt caching across all API calls
+    evidence_block = render_verifier_evidence(case) if config.runner == "anthropic" else ""
+
     prediction = _run_primary_result(
         case,
         config,
         anthropic_tools=anthropic_tools,
         anthropic_tool_runner=anthropic_tool_runner,
+        evidence_block=evidence_block,
     )
     result = _build_primary_result_record(case, prediction)
     result["primary_prompt_version"] = prediction.get("primary_prompt_version", "")
@@ -681,6 +696,7 @@ def analyze_commit(
                 case, result, findings, variant, config,
                 anthropic_tools=anthropic_tools,
                 anthropic_tool_runner=anthropic_tool_runner,
+                evidence_block=evidence_block,
             )
             judgment_votes.append(vote)
             _add_usage(total_usage, vote.get("usage"))
@@ -690,6 +706,7 @@ def analyze_commit(
             case, result, config,
             anthropic_tools=anthropic_tools,
             anthropic_tool_runner=anthropic_tool_runner,
+            evidence_block=evidence_block,
         )
         _add_usage(total_usage, benign_challenge_result.get("usage"))
 
@@ -709,6 +726,7 @@ def analyze_commit(
                         case, result, findings, variant, config,
                         anthropic_tools=anthropic_tools,
                         anthropic_tool_runner=anthropic_tool_runner,
+                        evidence_block=evidence_block,
                     )
                     judgment_votes.append(vote)
                     _add_usage(total_usage, vote.get("usage"))
@@ -729,6 +747,7 @@ def analyze_commit(
             case, result, config,
             anthropic_tools=anthropic_tools,
             anthropic_tool_runner=anthropic_tool_runner,
+            evidence_block=evidence_block,
         )
         _add_usage(total_usage, benign_challenge_result.get("usage"))
 
@@ -742,6 +761,7 @@ def analyze_commit(
                 config,
                 anthropic_tools=anthropic_tools,
                 anthropic_tool_runner=anthropic_tool_runner,
+                evidence_block=evidence_block,
             )
             votes.append(vote)
             _add_usage(total_usage, vote.get("usage"))
