@@ -70,6 +70,7 @@ class RunnerConfig:
     anthropic_max_tool_rounds: int = 0
     anthropic_max_total_tokens: int = 500000
     verifier_count: int = 3
+    quick_panel_size: int = 2
     benign_challenge_mode: str = "off"
 
 
@@ -126,6 +127,15 @@ def _classification_to_verifier_outcome(classification: str) -> str:
     if normalized == "benign":
         return "disprove"
     return "abstain"
+
+
+def _quick_panel_needs_escalation(votes: list[dict[str, Any]]) -> bool:
+    """Return True if any quick-panel vote is abstain or disprove."""
+    for vote in votes:
+        outcome = str(vote.get("outcome", "")).strip().lower()
+        if outcome in {"abstain", "disprove"}:
+            return True
+    return False
 
 
 def _default_benign_challenge_result(mode: str, status: str) -> dict[str, Any]:
@@ -639,48 +649,92 @@ def analyze_commit(
     verifier_results: list[dict[str, Any]] = []
     total_usage: dict[str, int] = {"input_tokens": 0, "output_tokens": 0}
     _add_usage(total_usage, result.get("usage"))
-    selected_variants = VERIFIER_VARIANTS[: max(0, config.verifier_count)]
-    if config.runner in {"heuristic", "oracle"} and selected_variants:
-        selected_variants = selected_variants[:1]
+    all_variants = VERIFIER_VARIANTS[: max(0, config.verifier_count)]
+    if config.runner in {"heuristic", "oracle"} and all_variants:
+        all_variants = all_variants[:1]
 
+    quick_panel_size = min(config.quick_panel_size, len(all_variants))
+    quick_variants = all_variants[:quick_panel_size]
+    escalation_variants = all_variants[quick_panel_size:]
+
+    target_classification = str(result.get("classification") or "").strip().lower()
     commit_judgment_verification = _default_commit_judgment_verification_result(
-        "disabled" if not selected_variants else "skipped_primary_unknown",
-        str(result.get("classification") or "").strip().lower(),
+        "disabled" if not all_variants else "skipped_primary_unknown",
+        target_classification,
     )
-    if selected_variants and commit_judgment_verification["target_classification"] in {"benign", "suspicious"}:
+    benign_challenge_result = _default_benign_challenge_result("off", "not_yet_run")
+    escalation_reason: str | None = None
+
+    if all_variants and target_classification in {"benign", "suspicious"}:
         judgment_votes: list[dict[str, Any]] = []
-        for variant in selected_variants:
+
+        if target_classification == "suspicious":
+            # Suspicious: run ALL variants immediately
+            run_variants = all_variants
+            escalation_reason = "suspicious_primary"
+        else:
+            # Benign: run quick panel first
+            run_variants = quick_variants
+
+        for variant in run_variants:
             vote = _run_commit_judgment_vote(
-                case,
-                result,
-                findings,
-                variant,
-                config,
+                case, result, findings, variant, config,
                 anthropic_tools=anthropic_tools,
                 anthropic_tool_runner=anthropic_tool_runner,
             )
             judgment_votes.append(vote)
             _add_usage(total_usage, vote.get("usage"))
+
+        # Benign challenge runs after quick panel, before escalation decision
+        benign_challenge_result = _run_benign_challenge(
+            case, result, config,
+            anthropic_tools=anthropic_tools,
+            anthropic_tool_runner=anthropic_tool_runner,
+        )
+        _add_usage(total_usage, benign_challenge_result.get("usage"))
+
+        # Escalation: run remaining variants if quick panel had dissent or challenge escalated
+        if target_classification == "benign" and escalation_variants:
+            panel_escalate = _quick_panel_needs_escalation(judgment_votes)
+            challenge_escalate = benign_challenge_result.get("decision") == "escalate"
+            if panel_escalate or challenge_escalate:
+                reasons = []
+                if panel_escalate:
+                    reasons.append("quick_panel_dissent")
+                if challenge_escalate:
+                    reasons.append("benign_challenge_escalate")
+                escalation_reason = "+".join(reasons)
+                for variant in escalation_variants:
+                    vote = _run_commit_judgment_vote(
+                        case, result, findings, variant, config,
+                        anthropic_tools=anthropic_tools,
+                        anthropic_tool_runner=anthropic_tool_runner,
+                    )
+                    judgment_votes.append(vote)
+                    _add_usage(total_usage, vote.get("usage"))
+
         commit_judgment_verification = {
             "scope": "primary_commit_classification",
             "status": "executed",
-            "target_classification": commit_judgment_verification["target_classification"],
+            "target_classification": target_classification,
             "votes": judgment_votes,
             "matrix": summarize_verifier_votes(judgment_votes),
+            "tiered": True,
+            "quick_panel_size": len(run_variants),
+            "escalation_reason": escalation_reason,
         }
-
-    benign_challenge_result = _run_benign_challenge(
-        case,
-        result,
-        config,
-        anthropic_tools=anthropic_tools,
-        anthropic_tool_runner=anthropic_tool_runner,
-    )
-    _add_usage(total_usage, benign_challenge_result.get("usage"))
+    else:
+        # No variants or unknown classification — still run benign challenge
+        benign_challenge_result = _run_benign_challenge(
+            case, result, config,
+            anthropic_tools=anthropic_tools,
+            anthropic_tool_runner=anthropic_tool_runner,
+        )
+        _add_usage(total_usage, benign_challenge_result.get("usage"))
 
     for finding in findings:
         votes: list[dict[str, Any]] = []
-        for variant in selected_variants:
+        for variant in all_variants:
             vote = _run_verifier_vote(
                 case,
                 finding,
@@ -734,8 +788,9 @@ def analyze_commit(
             "anthropic_max_tool_rounds": config.anthropic_max_tool_rounds,
             "anthropic_max_total_tokens": config.anthropic_max_total_tokens,
             "verifier_count": config.verifier_count,
-            "effective_verifier_count": len(selected_variants),
-            "effective_commit_judgment_verifier_count": len(selected_variants),
+            "quick_panel_size": config.quick_panel_size,
+            "effective_verifier_count": len(all_variants),
+            "effective_commit_judgment_verifier_count": len(commit_judgment_verification.get("votes", [])),
             "benign_challenge_mode": config.benign_challenge_mode,
         },
         "case": case,

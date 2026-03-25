@@ -58,6 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--anthropic-max-tool-rounds", type=int, default=0)
     parser.add_argument("--anthropic-max-total-tokens", type=int, default=500000)
     parser.add_argument("--verifier-count", type=int, default=3)
+    parser.add_argument("--quick-panel-size", type=int, default=2,
+                        help="Tiered verification: number of verifiers in the quick panel. "
+                             "Remaining verifiers run only on escalation.")
     parser.add_argument(
         "--benign-challenge-mode",
         choices=("off", "if_primary_benign"),
@@ -101,6 +104,7 @@ def main() -> None:
             anthropic_max_tool_rounds=args.anthropic_max_tool_rounds,
             anthropic_max_total_tokens=args.anthropic_max_total_tokens,
             verifier_count=args.verifier_count,
+            quick_panel_size=args.quick_panel_size,
             benign_challenge_mode=args.benign_challenge_mode,
         )
         result_policy = None

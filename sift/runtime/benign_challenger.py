@@ -156,8 +156,12 @@ def normalize_candidate_findings(case: CommitCase, findings_raw: Any) -> list[di
 
 
 def parse_benign_challenge_response(case: CommitCase, text: str) -> dict[str, Any]:
-    payload = _extract_json_payload(text)
     signals: list[str] = []
+    try:
+        payload = _extract_json_payload(text)
+    except (json.JSONDecodeError, ValueError):
+        payload = {}
+        signals.append("json_parse_failure")
     decision = str(payload.get("decision", "")).strip().lower()
     if decision not in {"uphold", "escalate", "abstain"}:
         decision = "abstain"

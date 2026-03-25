@@ -110,6 +110,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--anthropic-max-tool-rounds", type=int, default=0)
     parser.add_argument("--anthropic-max-total-tokens", type=int, default=500000)
     parser.add_argument("--verifier-count", type=int, default=3)
+    parser.add_argument("--quick-panel-size", type=int, default=2,
+                        help="Tiered verification: number of verifiers in the quick panel. "
+                             "Remaining verifiers run only on escalation.")
     parser.add_argument("--benign-challenge-mode", choices=("off", "sample", "all"), default="off")
     parser.add_argument("--benign-challenge-sample-rate", type=float, default=0.1)
     parser.add_argument("--output", default="", help="Path to write the aggregated PR JSON payload")
@@ -232,6 +235,7 @@ def main() -> None:
             anthropic_max_tool_rounds=args.anthropic_max_tool_rounds,
             anthropic_max_total_tokens=args.anthropic_max_total_tokens,
             verifier_count=args.verifier_count,
+            quick_panel_size=args.quick_panel_size,
         )
 
     pr_social_history: dict[str, Any] | None = None
@@ -269,6 +273,7 @@ def main() -> None:
             anthropic_max_tool_rounds=runner_config.anthropic_max_tool_rounds,
             anthropic_max_total_tokens=runner_config.anthropic_max_total_tokens,
             verifier_count=runner_config.verifier_count,
+            quick_panel_size=runner_config.quick_panel_size,
             benign_challenge_mode=benign_challenge_mode,
         )
 
