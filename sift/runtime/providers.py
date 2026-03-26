@@ -187,11 +187,10 @@ def anthropic_complete(
             "max_tokens": max_tokens,
             "temperature": temperature,
             "messages": messages,
-            "output_config": {
-                "effort": effort,
-            },
         }
-        if thinking_mode == "adaptive":
+        if effort and "haiku" not in model:
+            request_payload["output_config"] = {"effort": effort}
+        if thinking_mode == "adaptive" and "haiku" not in model:
             request_payload["thinking"] = {"type": "adaptive"}
         if tools:
             request_payload["tools"] = tools
