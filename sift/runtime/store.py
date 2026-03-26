@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_commit_runs_classification
 
 CREATE TABLE IF NOT EXISTS findings (
     finding_id TEXT PRIMARY KEY,
-    commit_run_id TEXT NOT NULL REFERENCES commit_runs(commit_run_id),
+    commit_run_id TEXT REFERENCES commit_runs(commit_run_id),
     finding_index INTEGER NOT NULL,
     finding_type TEXT NOT NULL,
     claim TEXT NOT NULL,
@@ -183,7 +183,53 @@ CREATE INDEX IF NOT EXISTS idx_benign_challenges_commit_run
     ON benign_challenges(commit_run_id);
 CREATE INDEX IF NOT EXISTS idx_benign_challenges_decision
     ON benign_challenges(decision);
+
+CREATE TABLE IF NOT EXISTS release_runs (
+    release_run_id TEXT PRIMARY KEY,
+    schema_version TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    from_tag TEXT NOT NULL,
+    to_tag TEXT NOT NULL,
+    from_sha TEXT NOT NULL,
+    to_sha TEXT NOT NULL,
+    from_version TEXT NOT NULL,
+    to_version TEXT NOT NULL,
+    tag_signature TEXT,
+    published_at TEXT,
+    commits_in_range INTEGER,
+    unique_authors INTEGER,
+    first_time_authors INTEGER,
+    dependency_changes_count INTEGER,
+    primary_classification TEXT,
+    primary_confidence TEXT,
+    primary_reasoning TEXT,
+    primary_raw_content_blocks_json TEXT,
+    release_prompt_version TEXT,
+    profile_id TEXT NOT NULL,
+    runner TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    harness_git_sha TEXT NOT NULL,
+    findings_total INTEGER NOT NULL DEFAULT 0,
+    verified_findings_total INTEGER NOT NULL DEFAULT 0,
+    surviving_findings_total INTEGER NOT NULL DEFAULT 0,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd_estimate REAL,
+    corroboration_commits_analyzed INTEGER,
+    corroboration_commits_with_findings INTEGER,
+    observed_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_release_runs_repo_tags
+    ON release_runs(repo, to_tag);
+CREATE INDEX IF NOT EXISTS idx_release_runs_classification
+    ON release_runs(primary_classification);
+CREATE INDEX IF NOT EXISTS idx_release_runs_profile
+    ON release_runs(profile_id, created_at);
 """
+
+RELEASE_RUN_STORE_SCHEMA_VERSION = "shadow_release_run_store_v1"
 
 SCHEMA_COLUMN_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
     "commit_runs": [
@@ -196,6 +242,10 @@ SCHEMA_COLUMN_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
     "verifier_votes": [
         ("raw_content_blocks_json", "TEXT"),
         ("raw_response_payloads_json", "TEXT"),
+        ("release_run_id", "TEXT"),
+    ],
+    "findings": [
+        ("release_run_id", "TEXT"),
     ],
 }
 
@@ -776,6 +826,182 @@ def persist_shadow_commit_payload(
             "harness_git_sha": harness_git_sha,
             "benign_challenges_written": total_benign_challenges,
             "commit_judgment_votes_written": total_commit_judgment_votes,
+            "findings_written": total_findings,
+            "verifier_votes_written": total_votes,
+        }
+    finally:
+        conn.close()
+
+
+def persist_shadow_release_payload(
+    db_path: Path,
+    payload: dict[str, Any],
+    *,
+    profile_id: str,
+    runner: str,
+    model_id: str,
+    harness_git_sha: str,
+    cost_usd_estimate: float | None = None,
+) -> dict[str, Any]:
+    """Persist a shadow_release_run payload to the SQLite store."""
+    ensure_sqlite_schema(db_path)
+    conn = connect_sqlite(db_path)
+    try:
+        case = payload.get("case") or {}
+        primary_result = payload.get("primary_result") or {}
+        total_usage = payload.get("total_usage") or {}
+        created_at = payload.get("generated_at_utc") or now_utc_iso()
+        release_run_id = make_id("rr")
+        rd = case.get("release_diff") or {}
+        corr = case.get("commit_corroboration") or {}
+
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO release_runs (
+                    release_run_id, schema_version, repo,
+                    from_tag, to_tag, from_sha, to_sha,
+                    from_version, to_version, tag_signature, published_at,
+                    commits_in_range, unique_authors, first_time_authors,
+                    dependency_changes_count,
+                    primary_classification, primary_confidence, primary_reasoning,
+                    primary_raw_content_blocks_json,
+                    release_prompt_version,
+                    profile_id, runner, model_id, harness_git_sha,
+                    findings_total, verified_findings_total, surviving_findings_total,
+                    input_tokens, output_tokens, cost_usd_estimate,
+                    corroboration_commits_analyzed, corroboration_commits_with_findings,
+                    observed_at, created_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                (
+                    release_run_id,
+                    RELEASE_RUN_STORE_SCHEMA_VERSION,
+                    case.get("repo", ""),
+                    case.get("from_tag", ""),
+                    case.get("to_tag", ""),
+                    case.get("from_sha", ""),
+                    case.get("to_sha", ""),
+                    case.get("from_version", ""),
+                    case.get("to_version", ""),
+                    case.get("tag_signature", ""),
+                    case.get("published_at", ""),
+                    rd.get("commits_in_range", 0),
+                    len(rd.get("unique_authors", [])),
+                    len(rd.get("first_time_authors", [])),
+                    len(case.get("dependency_changes", [])),
+                    primary_result.get("classification", "unknown"),
+                    primary_result.get("confidence", ""),
+                    primary_result.get("reasoning", ""),
+                    compact_json(payload.get("raw_content_blocks") or []),
+                    payload.get("config", {}).get("release_prompt_version", ""),
+                    profile_id,
+                    runner,
+                    model_id,
+                    harness_git_sha,
+                    len(primary_result.get("findings", [])),
+                    0, 0,
+                    total_usage.get("input_tokens", 0) or 0,
+                    total_usage.get("output_tokens", 0) or 0,
+                    cost_usd_estimate,
+                    corr.get("commits_analyzed"),
+                    corr.get("commits_with_findings"),
+                    created_at,
+                    created_at,
+                ),
+            )
+
+            total_findings = 0
+            total_votes = 0
+            verified_count = 0
+            surviving_count = 0
+
+            for vr in payload.get("verifier_results", []):
+                finding = vr.get("finding") or {}
+                matrix = vr.get("matrix") or {}
+                finding_id = make_id("rf")
+                total_findings += 1
+                conn.execute(
+                    """
+                    INSERT INTO findings (
+                        finding_id, commit_run_id, release_run_id,
+                        finding_index, finding_type, claim, severity,
+                        suggested_action, evidence_refs_json,
+                        matrix_status, verifications, disproofs, abstains,
+                        verification_ratio, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        finding_id, None, release_run_id,
+                        finding.get("finding_index", total_findings - 1),
+                        finding.get("finding_type", "other"),
+                        finding.get("claim", ""),
+                        finding.get("severity", ""),
+                        finding.get("suggested_action", ""),
+                        compact_json(finding.get("evidence_refs") or []),
+                        matrix.get("status", ""),
+                        matrix.get("verifications", 0),
+                        matrix.get("disproofs", 0),
+                        matrix.get("abstains", 0),
+                        matrix.get("verification_ratio", 0.0),
+                        created_at,
+                    ),
+                )
+                if matrix.get("status") in ("valid", "weak"):
+                    verified_count += 1
+                if matrix.get("status") not in ("rejected", "lean_rejected"):
+                    surviving_count += 1
+
+                for vote in vr.get("votes", []):
+                    vote_id = make_id("rv")
+                    total_votes += 1
+                    conn.execute(
+                        """
+                        INSERT INTO verifier_votes (
+                            vote_id, finding_id, verifier_id,
+                            outcome, confidence, rationale,
+                            evidence_refs_json,
+                            input_tokens, output_tokens, latency_ms,
+                            raw_response_path, raw_content_blocks_json,
+                            raw_response_payloads_json,
+                            created_at, release_run_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            vote_id, finding_id,
+                            vote.get("verifier_id", ""),
+                            vote.get("outcome", ""),
+                            vote.get("confidence", ""),
+                            vote.get("rationale", ""),
+                            compact_json(vote.get("evidence_refs") or []),
+                            (vote.get("usage") or {}).get("input_tokens"),
+                            (vote.get("usage") or {}).get("output_tokens"),
+                            None, "",
+                            compact_json(vote.get("raw_content_blocks") or []),
+                            compact_json(vote.get("raw_response_payloads") or []),
+                            created_at,
+                            release_run_id,
+                        ),
+                    )
+
+            conn.execute(
+                "UPDATE release_runs SET findings_total=?, verified_findings_total=?, surviving_findings_total=? WHERE release_run_id=?",
+                (total_findings, verified_count, surviving_count, release_run_id),
+            )
+
+        return {
+            "release_run_id": release_run_id,
+            "repo": case.get("repo", ""),
+            "from_tag": case.get("from_tag", ""),
+            "to_tag": case.get("to_tag", ""),
+            "profile_id": profile_id,
+            "runner": runner,
+            "model_id": model_id,
+            "harness_git_sha": harness_git_sha,
             "findings_written": total_findings,
             "verifier_votes_written": total_votes,
         }
