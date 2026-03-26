@@ -190,6 +190,8 @@ SCHEMA_COLUMN_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("primary_reasoning", "TEXT"),
         ("primary_raw_content_blocks_json", "TEXT"),
         ("primary_raw_response_payloads_json", "TEXT"),
+        ("profile_id", "TEXT"),
+        ("model_id", "TEXT"),
     ],
     "verifier_votes": [
         ("raw_content_blocks_json", "TEXT"),
@@ -231,11 +233,18 @@ def _apply_schema_column_migrations(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
 
 
+_POST_MIGRATION_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_commit_runs_profile ON commit_runs(profile_id, created_at)",
+]
+
+
 def ensure_sqlite_schema(db_path: Path) -> None:
     conn = connect_sqlite(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
         _apply_schema_column_migrations(conn)
+        for idx_sql in _POST_MIGRATION_INDEXES:
+            conn.execute(idx_sql)
         conn.commit()
     finally:
         conn.close()
@@ -587,8 +596,9 @@ def persist_shadow_commit_payload(
                     primary_confidence, primary_reasoning, primary_prompt_version,
                     primary_raw_response_path, primary_raw_content_blocks_json,
                     primary_raw_response_payloads_json,
-                    input_tokens, output_tokens, latency_ms, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    input_tokens, output_tokens, latency_ms, created_at,
+                    profile_id, model_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     commit_run_id,
@@ -612,6 +622,8 @@ def persist_shadow_commit_payload(
                     int(total_usage.get("output_tokens") or 0),
                     None,
                     created_at,
+                    profile_id,
+                    model_id,
                 ),
             )
 
