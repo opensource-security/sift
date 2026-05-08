@@ -92,8 +92,8 @@ class ResultPolicy:
 
 
 # ---------------------------------------------------------------------------
-# Replay-specific runners (heuristic, oracle) are not available in sift.
-# These are only used in the stars evaluation harness.
+# Replay-specific runners (heuristic, oracle) are not available in sift; sift
+# supports only model-backed runners (anthropic, ollama).
 # ---------------------------------------------------------------------------
 
 def _get_replay_runners() -> tuple[Any, Any, Any]:
@@ -584,14 +584,10 @@ def analyze_commit(
 ) -> dict[str, Any]:
     """Analyze a single commit and return the full structured payload.
 
-    This is the in-process equivalent of running shadow_commit_run.py as a
-    subprocess. It builds a realtime case, runs the primary triage pass,
-    commit-judgment verification, finding-level verification, and the optional
-    benign challenger.
-
-    The returned dict has the same shape as the JSON artifact written by
-    shadow_commit_run.py, minus the sqlite/profile/store metadata (those are
-    added by the CLI wrapper).
+    Builds a realtime case, runs the primary triage pass, commit-judgment
+    verification, finding-level verification, and the optional benign
+    challenger. The returned dict is the analysis payload; CLI wrappers add
+    profile metadata before writing the JSON artifact.
     """
     if not observed_at:
         observed_at = now_utc_iso()

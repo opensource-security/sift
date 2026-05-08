@@ -1,8 +1,41 @@
 [project]
 name = "sift"
 version = "0.1.1"
-description = "LLM-assisted commit triage for supply-chain security"
+description = "LLM-assisted commit triage for supply-chain security — analyzes Git commits and pull requests with Claude to surface security-relevant findings for maintainer review."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "opensource-security" },
+]
+keywords = [
+    "supply-chain-security",
+    "code-review",
+    "llm",
+    "git",
+    "github-actions",
+    "anthropic",
+    "claude",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+
+[project.urls]
+Homepage = "https://github.com/opensource-security/sift"
+Repository = "https://github.com/opensource-security/sift"
+Issues = "https://github.com/opensource-security/sift/issues"
 
 [project.scripts]
 sift-commit = "sift.cli.analyze_commit:main"

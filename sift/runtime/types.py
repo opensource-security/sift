@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Any, TypeAlias, TypedDict
 
@@ -85,31 +83,6 @@ class VerificationMatrix(TypedDict, total=False):
     status: str
 
 
-class TagSignatureStatus(str, Enum):
-    """Tag signature classification for release analysis."""
-
-    SIGNED_GPG = "signed_gpg"
-    SIGNED_SIGSTORE = "signed_sigstore"
-    ANNOTATED_UNSIGNED = "annotated_unsigned"
-    LIGHTWEIGHT = "lightweight"
-    UNKNOWN = "unknown"
-
-
-@dataclass
-class ResolvedRelease:
-    """A release resolved to a commit SHA with metadata."""
-
-    tag_name: str
-    version_normalized: str
-    commit_sha: str
-    published_at: datetime | None = None
-    tagger: str | None = None
-    tag_signature: TagSignatureStatus = TagSignatureStatus.UNKNOWN
-    detection_source: str = "github_releases"
-    prerelease: bool = False
-
-
 CommitCase: TypeAlias = dict[str, Any]
-ReleaseCase: TypeAlias = dict[str, Any]
 GHArchiveEventLookup: TypeAlias = dict[tuple[str, str], GHArchivePushEvent]
 GHArchiveEventsByRepo: TypeAlias = dict[str, list[GHArchivePushEvent]]

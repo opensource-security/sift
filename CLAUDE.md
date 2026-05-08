@@ -1,8 +1,5 @@
 # CLAUDE.md
 
-For project-wide context — the oracle framing, commit analysis flow, dashboard access, and RSS feed — see the **[handbook](https://github.com/opensource-security/handbook)**.
-
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview

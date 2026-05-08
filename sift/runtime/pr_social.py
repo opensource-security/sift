@@ -92,7 +92,7 @@ class GitHubRESTClient:
     def _headers(self) -> dict[str, str]:
         headers = {
             "Accept": "application/vnd.github+json",
-            "User-Agent": "stars-pr-social/1",
+            "User-Agent": "sift-pr-social/1",
         }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"

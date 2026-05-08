@@ -17,12 +17,8 @@ truncation) when the intent triage missed them on the same commit.
 This module is deliberately scoped narrowly for a first cut:
 - It exposes a standalone `run_assumption_triage` driver that callers invoke
   directly. It does not modify `analyze_commit`.
-- It does not persist findings to the SQLite store.
 - It does not have a verifier matrix.
 - It does not change the existing intent-triage prompt or finding taxonomy.
-
-See follow_ups/assumption_triage_followups.md in the stars repo for the gaps
-that this first cut intentionally leaves open.
 """
 
 from __future__ import annotations
