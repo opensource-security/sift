@@ -19,6 +19,8 @@ from sift.runtime.providers import (
     ANTHROPIC_DEFAULT_EFFORT,
     ANTHROPIC_DEFAULT_MODEL,
     ANTHROPIC_DEFAULT_THINKING,
+    OPENAI_DEFAULT_EFFORT,
+    OPENAI_DEFAULT_MODEL,
     now_utc_iso,
 )
 
@@ -38,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ref", required=True, help="Observed ref, e.g. refs/heads/main")
     parser.add_argument("--observed-at", default="", help="First-observation timestamp (ISO-8601 UTC)")
     parser.add_argument("--repo", default="", help="Optional repo identifier like owner/name")
-    parser.add_argument("--runner", choices=("ollama", "anthropic"), default="anthropic")
+    parser.add_argument("--runner", choices=("ollama", "anthropic", "openai"), default="anthropic")
     parser.add_argument("--gharchive-mode", choices=("full", "omit"), default="full")
     parser.add_argument("--max-patch-chars", type=int, default=12000)
     parser.add_argument("--max-files", type=int, default=200)
@@ -57,6 +59,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--anthropic-tool-mode", choices=("none", "readonly"), default="readonly")
     parser.add_argument("--anthropic-max-tool-rounds", type=int, default=0)
     parser.add_argument("--anthropic-max-total-tokens", type=int, default=500000)
+    parser.add_argument("--openai-model", default=OPENAI_DEFAULT_MODEL)
+    parser.add_argument("--openai-timeout-sec", type=int, default=240)
+    parser.add_argument(
+        "--openai-effort",
+        default=OPENAI_DEFAULT_EFFORT,
+        help="OpenAI reasoning_effort: minimal, low, medium, or high (empty to omit)",
+    )
     parser.add_argument("--verifier-count", type=int, default=3)
     parser.add_argument("--quick-panel-size", type=int, default=2,
                         help="Tiered verification: number of verifiers in the quick panel. "
@@ -103,6 +112,9 @@ def main() -> None:
             anthropic_tool_mode=args.anthropic_tool_mode,
             anthropic_max_tool_rounds=args.anthropic_max_tool_rounds,
             anthropic_max_total_tokens=args.anthropic_max_total_tokens,
+            openai_model=args.openai_model,
+            openai_timeout_sec=args.openai_timeout_sec,
+            openai_effort=args.openai_effort,
             verifier_count=args.verifier_count,
             quick_panel_size=args.quick_panel_size,
             benign_challenge_mode=args.benign_challenge_mode,

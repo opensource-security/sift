@@ -23,6 +23,9 @@ ANTHROPIC_DEFAULT_MODEL = "claude-opus-4-6"
 ANTHROPIC_DEFAULT_THINKING = "adaptive"
 ANTHROPIC_DEFAULT_EFFORT = "max"
 
+OPENAI_DEFAULT_MODEL = "gpt-5.4"
+OPENAI_DEFAULT_EFFORT = "high"
+
 
 def now_utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -339,6 +342,103 @@ def anthropic_complete(
     }
 
 
+def openai_complete(
+    prompt: str,
+    *,
+    model: str,
+    api_key: str,
+    timeout_sec: int,
+    reasoning_effort: str,
+    max_tokens: int,
+) -> dict[str, Any]:
+    """Call the OpenAI Chat Completions API.
+
+    Stdlib-only (no third-party HTTP dependency), and returns the same
+    completion-dict contract as anthropic_complete/ollama_complete:
+    {ok, text, error, raw_response, usage: {input_tokens, output_tokens}}.
+
+    gpt-5-family constraints: use max_completion_tokens (max_tokens is
+    rejected), send no temperature (reasoning models reject non-default
+    values), and treat empty message content as a failure — that is the case
+    where the reasoning budget consumed the whole completion allowance.
+    """
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_completion_tokens": max_tokens,
+    }
+    if reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    max_retries = 5
+    last_error = ""
+    raw_body = ""
+    for attempt in range(max_retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_sec) as response:
+                raw_body = response.read().decode("utf-8")
+            data = json.loads(raw_body)
+            choice = (data.get("choices") or [{}])[0]
+            text = (choice.get("message") or {}).get("content") or ""
+            usage_raw = data.get("usage") or {}
+            usage = {
+                "input_tokens": usage_raw.get("prompt_tokens"),
+                "output_tokens": usage_raw.get("completion_tokens"),
+            }
+            if not text:
+                finish = choice.get("finish_reason", "")
+                return {
+                    "ok": False,
+                    "text": "",
+                    "error": f"openai returned empty content (finish_reason={finish})",
+                    "raw_response": raw_body,
+                    "usage": usage,
+                }
+            return {
+                "ok": True,
+                "text": text,
+                "error": "",
+                "raw_response": raw_body,
+                "usage": usage,
+            }
+        except urllib.error.HTTPError as exc:
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            last_error = f"openai http {exc.code}: {body[:2000]}"
+            raw_body = body
+            if exc.code in (429, 500, 502, 503, 529) and attempt < max_retries:
+                time.sleep(min(2**attempt * 2, 60))
+                continue
+            break
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_error = f"openai request failed: {exc}"
+            if attempt < max_retries:
+                time.sleep(min(2**attempt * 2, 60))
+                continue
+            break
+        except (json.JSONDecodeError, KeyError, IndexError) as exc:
+            last_error = f"openai response parse failure: {exc}"
+            break
+    return {
+        "ok": False,
+        "text": "",
+        "error": last_error,
+        "raw_response": raw_body,
+        "usage": {},
+    }
+
+
 def run_text_prompt(
     prompt: str,
     runner_name: str,
@@ -357,6 +457,10 @@ def run_text_prompt(
     anthropic_max_tool_rounds: int = 0,
     anthropic_max_total_tokens: int = 500000,
     cached_prefix: str = "",
+    openai_model: str = OPENAI_DEFAULT_MODEL,
+    openai_api_key: str = "",
+    openai_timeout_sec: int = 240,
+    openai_effort: str = OPENAI_DEFAULT_EFFORT,
 ) -> dict[str, Any]:
     if runner_name == "ollama":
         return ollama_complete(
@@ -380,6 +484,15 @@ def run_text_prompt(
             max_tool_rounds=anthropic_max_tool_rounds,
             max_total_tokens=anthropic_max_total_tokens,
             cached_prefix=cached_prefix,
+        )
+    if runner_name == "openai":
+        return openai_complete(
+            prompt,
+            model=openai_model,
+            api_key=openai_api_key,
+            timeout_sec=openai_timeout_sec,
+            reasoning_effort=openai_effort,
+            max_tokens=max_tokens,
         )
     return {
         "ok": False,

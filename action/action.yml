@@ -7,22 +7,22 @@ inputs:
     required: false
     default: ""
   provider:
-    description: "LLM provider: anthropic or ollama (ignored when profile is set)"
+    description: "LLM provider: anthropic, openai, or ollama (ignored when profile is set)"
     required: false
     default: "anthropic"
   api_key:
-    description: "Provider API key (e.g. Anthropic API key)"
+    description: "Provider API key. For provider=anthropic this is the Anthropic key (exported as ANTHROPIC_API_KEY); for provider=openai it is the OpenAI key (exported as OPENAI_API_KEY)."
     required: true
   model:
-    description: "Model ID to use"
+    description: "Model ID to use. Set an OpenAI model id (e.g. gpt-5.4) when provider=openai."
     required: false
     default: "claude-sonnet-4-20250514"
   thinking:
-    description: "Thinking mode: adaptive or off"
+    description: "Thinking mode: adaptive or off (anthropic only)"
     required: false
     default: "adaptive"
   effort:
-    description: "Model effort level: low, medium, high, max"
+    description: "Model effort level. anthropic: low/medium/high/max. openai reasoning_effort: minimal/low/medium/high."
     required: false
     default: "high"
   max_commits:
@@ -90,7 +90,10 @@ runs:
       id: analyze
       shell: bash
       env:
+        # The selected runner reads only its own key; the same api_key input
+        # is exported under both names so either provider can be chosen.
         ANTHROPIC_API_KEY: ${{ inputs.api_key }}
+        OPENAI_API_KEY: ${{ inputs.api_key }}
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         mkdir -p artifacts
@@ -98,14 +101,19 @@ runs:
         if [ -n "${{ inputs.profile }}" ]; then
           PROFILE_ARG="--profile ${{ inputs.profile }}"
         fi
+        # Thread model/effort to the flags for the selected provider. Anthropic
+        # is the default; openai maps effort to reasoning_effort.
+        if [ "${{ inputs.provider }}" = "openai" ]; then
+          PROVIDER_ARGS=(--openai-model "${{ inputs.model }}" --openai-effort "${{ inputs.effort }}")
+        else
+          PROVIDER_ARGS=(--anthropic-model "${{ inputs.model }}" --anthropic-thinking "${{ inputs.thinking }}" --anthropic-effort "${{ inputs.effort }}")
+        fi
         python3 -m sift.cli.analyze_pr \
           --repo-path "$GITHUB_WORKSPACE" \
           --event-json "$GITHUB_EVENT_PATH" \
           $PROFILE_ARG \
           --runner "${{ inputs.provider }}" \
-          --anthropic-model "${{ inputs.model }}" \
-          --anthropic-thinking "${{ inputs.thinking }}" \
-          --anthropic-effort "${{ inputs.effort }}" \
+          "${PROVIDER_ARGS[@]}" \
           --verifier-count "${{ inputs.verifier_count }}" \
           --pr-social-mode "${{ inputs.pr_social_mode }}" \
           --anthropic-tool-mode "${{ inputs.tool_mode }}" \

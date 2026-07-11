@@ -35,6 +35,8 @@ from .providers import (
     ANTHROPIC_DEFAULT_EFFORT,
     ANTHROPIC_DEFAULT_MODEL,
     ANTHROPIC_DEFAULT_THINKING,
+    OPENAI_DEFAULT_EFFORT,
+    OPENAI_DEFAULT_MODEL,
     now_utc_iso,
     run_text_prompt,
 )
@@ -70,6 +72,10 @@ class RunnerConfig:
     anthropic_tool_mode: str = "readonly"
     anthropic_max_tool_rounds: int = 0
     anthropic_max_total_tokens: int = 500000
+    openai_model: str = OPENAI_DEFAULT_MODEL
+    openai_api_key: str = ""
+    openai_timeout_sec: int = 240
+    openai_effort: str = OPENAI_DEFAULT_EFFORT
     verifier_count: int = 3
     quick_panel_size: int = 2
     benign_challenge_mode: str = "off"
@@ -193,6 +199,10 @@ def _run_text_prompt_with_config(
         anthropic_max_tool_rounds=config.anthropic_max_tool_rounds,
         anthropic_max_total_tokens=config.anthropic_max_total_tokens,
         cached_prefix=cached_prefix,
+        openai_model=config.openai_model,
+        openai_api_key=config.openai_api_key,
+        openai_timeout_sec=config.openai_timeout_sec,
+        openai_effort=config.openai_effort,
     )
 
 
@@ -600,6 +610,14 @@ def analyze_commit(
         anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not anthropic_api_key:
             raise RuntimeError("ANTHROPIC_API_KEY environment variable is required for the anthropic runner")
+    openai_api_key = config.openai_api_key
+    if config.runner == "openai" and not openai_api_key:
+        # Evan's .env uses the OPEN_AI_API_KEY spelling; accept both.
+        openai_api_key = os.environ.get("OPENAI_API_KEY", "") or os.environ.get("OPEN_AI_API_KEY", "")
+        if not openai_api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY (or OPEN_AI_API_KEY) environment variable is required for the openai runner"
+            )
     # Build a config copy with the resolved key
     config = RunnerConfig(
         runner=config.runner,
@@ -614,7 +632,12 @@ def analyze_commit(
         anthropic_tool_mode=config.anthropic_tool_mode,
         anthropic_max_tool_rounds=config.anthropic_max_tool_rounds,
         anthropic_max_total_tokens=config.anthropic_max_total_tokens,
+        openai_model=config.openai_model,
+        openai_api_key=openai_api_key,
+        openai_timeout_sec=config.openai_timeout_sec,
+        openai_effort=config.openai_effort,
         verifier_count=config.verifier_count,
+        quick_panel_size=config.quick_panel_size,
         benign_challenge_mode=config.benign_challenge_mode,
     )
 
@@ -803,6 +826,9 @@ def analyze_commit(
             "anthropic_tool_mode": config.anthropic_tool_mode,
             "anthropic_max_tool_rounds": config.anthropic_max_tool_rounds,
             "anthropic_max_total_tokens": config.anthropic_max_total_tokens,
+            "openai_model": config.openai_model,
+            "openai_timeout_sec": config.openai_timeout_sec,
+            "openai_effort": config.openai_effort,
             "verifier_count": config.verifier_count,
             "quick_panel_size": config.quick_panel_size,
             "effective_verifier_count": len(all_variants),
