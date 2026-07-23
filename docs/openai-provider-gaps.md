@@ -4,26 +4,32 @@ Status as of the change that added the `openai` provider (sift 0.1.2). These
 are the items a follow-up needs to resolve before this ships as an installable
 release, plus the deliberate scope boundaries.
 
-## BLOCKING: store.py / release_case.py seam
+## RESOLVED: store.py / release_case.py seam
 
 sift HEAD (`2f02ead`) deleted `sift/runtime/store.py` and
-`sift/runtime/release_case.py`. This change did **not** restore them.
+`sift/runtime/release_case.py` and trimmed the release types
+(`ResolvedRelease`, `TagSignatureStatus`, `ReleaseCase`) from
+`sift/runtime/types.py`. sift stays trimmed — those modules were **not**
+restored here, preserving the standalone-release intent of `2f02ead`.
 
-- The `stars` repo still imports both modules (e.g. `shadow_pr_run.py`,
-  `shadow_commit_run.py`, `shadow_release_run.py`).
-- The `stars` venv currently runs a pre-deletion sift **0.1.1** snapshot, where
-  both files still exist under
-  `.../site-packages/sift/runtime/{store,release_case}.py`. So stars is
-  **currently unaffected**.
-- The moment sift **0.1.2** (or any post-deletion build) is installed into an
-  environment stars depends on, stars breaks at import time.
+Resolved by **vendoring into stars** (option 2 below): the deleted modules now
+live in `stars/runtime/_sift_vendor/` (`store.py`, `release_case.py`,
+`types.py`), recovered from `2f02ead~1`. The vendored copies import the sift
+modules that still exist (`providers`, `case_builder`, `primary`) absolutely,
+and only the removed release types are carried locally. stars' `runtime/store.py`
+and `runtime/release_case.py` shims re-export from the vendor, and the direct
+importers (`shadow_release_run.py`, `runtime/release_tracker.py`) were repointed
+off `sift.runtime.{store,release_case,types}`.
 
-This work only modified the sift working tree — no `pip install` / `uv pip
-install` was run into the stars venv, and no wheel was built. Before releasing
-0.1.2 as installable, resolve the seam one of two ways:
+Verified: with the post-deletion sift source shadowing the installed 0.1.1
+snapshot, all stars release imports resolve to `runtime._sift_vendor.*` — stars
+no longer depends on sift providing these modules. Installing sift 0.1.2 into
+the stars venv is therefore safe.
+
+Historical context (the two paths that were considered):
 
 1. Restore `store.py` and `release_case.py` in sift, or
-2. Coordinate with Evan to vendor them into stars first.
+2. Vendor them into stars first. ← chosen
 
 ## Scope boundaries (intentional, not gaps to fix silently)
 
