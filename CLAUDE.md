@@ -16,7 +16,11 @@ sift-commit                  # analyze a single commit
 sift-pr                      # analyze all commits in a PR
 ```
 
-No test suite or linting configuration exists yet.
+No linting configuration exists yet. There is no general test suite — `tests/`
+holds regression fixtures pinned to specific real incidents, runnable directly
+(`python tests/<file>.py`) or under pytest, with no pytest dependency required.
+Level-1 assertions are deterministic and free; level-2 assertions that call a
+live model are opt-in behind `SIFT_FIXTURE_LIVE=1`.
 
 ## Architecture
 

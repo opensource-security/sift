@@ -1,0 +1,54 @@
+{
+  "fixture": "asyncapi_lockfile_noise_2026",
+  "question": "Does sift surface a 1-line malicious payload buried in a ~950KB diff that is 97% lockfile churn?",
+  "repo": "asyncapi/generator",
+  "sha": "3eab3ec9304aa26081358330491d3cfeb55cc245",
+  "parent_sha": "ff010ef38e1be1ffc4112c8903f43637ecbf4041",
+  "incident": "asyncapi_srcinject_2026",
+  "disclosed": "2026-07-14",
+  "label": "malicious",
+  "provenance": {
+    "sources": ["Wiz", "StepSecurity", "Unit 42"],
+    "notes": "Initial access was a pull_request_target 'pwn request' (PR #2155) that leaked the asyncapi-bot PAT; the introducing commit is a direct push using that stolen credential. NOTE: the commit AUTHOR metadata is the git default placeholder 'Your Name <you@example.com>' with zero prior commits in the repo -- the stolen bot identity is the PUSH actor, not the commit author. Public writeups describe this as an established-identity ATO, which is true of the push and false of the commit. Verified against the live remote 2026-07-24."
+  },
+  "why_this_fixture": [
+    "No other corpus record poses the needle-in-noise problem: the payload is 1 modified line inside a 30,597-line diff dominated by a +15035/-14955 package-lock.json.",
+    "The payload is whitespace-padded with 880 leading spaces so it sits off-screen in an editor, then 7,686 chars of _0x-mangled obfuscated JavaScript.",
+    "It executes on import/require, not on install, and touches no CI workflow file."
+  ],
+  "commit_shape": {
+    "files_changed": 9,
+    "patch_lines": 30597,
+    "payload_files": [
+      "apps/generator/lib/templates/config/validator.js",
+      "packages/components/src/utils/ErrorHandling.js",
+      "packages/helpers/src/utils.js"
+    ],
+    "payload_line_chars": 7686,
+    "payload_leading_spaces": 880,
+    "dropper_file": "apps/react-sdk/src/utils/withNewLines.ts",
+    "dropper_detail": "spawn('node', ['-e', <3210-char obfuscated blob>], {detached: true, stdio: 'ignore', windowsHide: true})"
+  },
+  "pinned_behavior": {
+    "note": "Byte offsets of each file header within `git show --format= --unified=3 <sha>`. git orders files by path, so what survives sift's head-truncation is decided by ALPHABETICAL SORT ORDER, not by relevance. Offsets are approximate across git versions; assertions compare against the budget, not exact values.",
+    "default_max_patch_chars": 12000,
+    "file_offsets": {
+      "apps/generator/lib/templates/config/validator.js": 0,
+      "apps/generator/package.json": 8318,
+      "apps/react-sdk/package.json": 14993,
+      "apps/react-sdk/src/utils/withNewLines.ts": 19932,
+      "package-lock.json": 24613,
+      "packages/components/package.json": 926755,
+      "packages/components/src/utils/ErrorHandling.js": 930386,
+      "packages/helpers/package.json": 938757,
+      "packages/helpers/src/utils.js": 940494
+    },
+    "at_default_budget": {
+      "payload_copies_visible": 1,
+      "payload_copies_total": 3,
+      "dropper_visible": false,
+      "patch_truncated": true,
+      "verdict": "DETECTABLE BUT FRAGILE -- sift sees the payload only because validator.js sorts first alphabetically. Two of the three infected files and the entire dropper are past the cut. Had the payload landed only in packages/helpers/src/utils.js, it would sit at ~99% depth and be structurally invisible at any sane budget."
+    }
+  }
+}
