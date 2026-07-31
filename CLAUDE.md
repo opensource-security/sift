@@ -33,6 +33,23 @@ holds regression fixtures pinned to specific real incidents, runnable directly
 Level-1 assertions are deterministic and free; level-2 assertions that call a
 live model are opt-in behind `SIFT_FIXTURE_LIVE=1`.
 
+Three kinds of provenance test, and they catch different things:
+
+- `test_domain_provenance.py` — the two real incidents, replayed from recorded
+  RDAP/CT responses against a pinned `now`.
+- `test_provenance_scenarios.py` — the band ladder as a table of
+  (shape → expected band/role), covering the space *around* those incidents. The
+  two deliberate caps live here: a weak (author-date) anchor never reaches
+  CRITICAL, and corroboration never moves a band.
+- `test_provenance_pipeline_anchors.py` — the wiring from `case_builder` history
+  through to a verdict. Four defects once lived in that path simultaneously while
+  every incident fixture passed, because those fixtures construct their own
+  anchors and enter at `assess_domain`.
+
+Provenance tests set `SIFT_FIXTURE_REPLAY=1` for themselves. Replay is opt-in:
+production defaults to live network access, because a fixture cache that is never
+populated on a runner would make every lookup a `CacheMiss`.
+
 ## Architecture
 
 ### Analysis Pipeline

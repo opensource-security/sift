@@ -641,6 +641,38 @@ that opened the PR (`eharris128`) rather than the commit author email, and repor
 "No candidate domains". The in-case evidence hook, which reads `commit_payload`, was
 correct throughout. The standalone rendering path needs the commit emails passed too.
 
+### 10. The shape space, pinned as a table
+
+`tests/test_provenance_scenarios.py` asserts the ladder as
+(shape -> expected band/role) rather than as prose, so a change to `assess_domain`
+surfaces as a diff in a table. Fifteen rows across anchor strength, gap verdict,
+corroboration, registry answer, and input handling.
+
+Two results worth stating outright, because neither had been demonstrated before:
+
+- **CRITICAL is reachable, and only one way.** Strong (GPG) anchor plus a dormant
+  gap. Verified against a real key generated with `gpg --faked-system-time`, so the
+  test exercises `parse_gpg_packets` on genuine packet output and confirms the
+  *per-UID binding date* is what gets read. Every other shape caps lower: weak
+  anchor plus dormant is LIKELY, an untestable gap is NOTE, and anything
+  continuous is NOTE/counter.
+- **An untestable gap costs two rungs.** A strong anchor with a real discontinuity
+  lands at NOTE when there is no repo-local history to test dormancy against. The
+  mechanism was already documented; the size of the drop was not.
+
+The table has teeth: removing the weak-anchor cap and making corroboration gate the
+band were both introduced as mutations, and each was caught -- the second by the
+assertion written specifically for it.
+
+One row documents a **known gap rather than desired behaviour**: dormant plus an
+unchanged signing key still reads CRITICAL, though it is the benign self-rebuy
+shape (a domain takeover does not convey the private key). It is deliberately not
+fixed, because `%GK` reports a *claimed* issuer key id whether or not the signature
+verifies -- `%G?` is `E` whenever the public key is absent from the keyring, which
+on a CI runner it always is. Downgrading a band on key continuity today would be an
+attacker-settable suppression primitive, the same failure shape as the `--all`
+issue. Verify the signature first, then change the ladder, then invert that test.
+
 ### Remaining open questions
 
 1. **`gap_activity` scans `--all`, which includes attacker-pushable refs.**
