@@ -8,13 +8,24 @@ Sift is an LLM-assisted commit triage system for supply-chain security. It analy
 
 ## Build & Development
 
-Uses `uv` with `hatchling` backend. No external runtime dependencies (stdlib only).
+Uses `uv` with `hatchling` backend. The core pipeline has no external runtime
+dependencies (stdlib only). The optional `provenance` extra does — see below.
 
 ```bash
-uv pip install -e .          # install in dev mode
-sift-commit                  # analyze a single commit
-sift-pr                      # analyze all commits in a PR
+uv pip install -e .                  # core pipeline, stdlib only
+uv pip install -e '.[provenance]'    # adds domain-provenance checks
+sift-commit                          # analyze a single commit
+sift-pr                              # analyze all commits in a PR
+sift-domain                          # contributor email-domain provenance
 ```
+
+**The stdlib-only rule still applies to `sift/runtime/`, `sift/render/`,
+`sift/cli/`, and `sift/profiles/`.** Only `sift/provenance/` may use third-party
+packages (httpx, tldextract, idna, python-dateutil, dnspython), and the dependency
+direction is one-way: `provenance` may import `runtime`, never the reverse.
+`tests/test_provenance_extra_isolation.py` enforces this by scanning for
+module-scope imports and by importing the whole pipeline with those modules
+blocked.
 
 No linting configuration exists yet. There is no general test suite — `tests/`
 holds regression fixtures pinned to specific real incidents, runnable directly
@@ -40,10 +51,36 @@ live model are opt-in behind `SIFT_FIXTURE_LIVE=1`.
 - `sift/runtime/sensitive_surfaces.py` — pattern-based path classification (ci_workflow, build_config, dependency_manifest, release_publish)
 - `sift/runtime/file_ownership.py` — git log analysis for ownership concentration metrics
 
+### Domain Provenance (`sift/provenance/`, optional extra)
+
+Detects whether a contributor's email domain **changed hands** since that identity
+began using it — the maintainer-domain takeover vector behind npm `node-ipc` (2026)
+and PyPI `ctx` (2022). Drop-and-re-register resets a domain's RDAP registration
+date; renewal and voluntary transfer do not, so `used_since < held_since` means the
+domain left the identity's control.
+
+- `names.py` — the security boundary. Domains arrive from attacker-controlled PR
+  metadata and are then interpolated into URLs, so validation, IDNA A-label
+  normalization, registrable-domain reduction, and the skip-list all run **before**
+  any egress.
+- `rdap.py` — IANA bootstrap (bundled snapshot in `data/`) plus registration/expiry/
+  status parsing. Every failure maps to UNKNOWN, never CLEAN.
+- `ct.py` — Certificate Transparency and Wayback corroboration. Confidence modifier
+  only; measured to be absent for the domain profile this attack targets.
+- `identity.py` — `used_since` anchors (GPG UID binding dates via `gpg
+  --list-packets`, repo-local commit dates) and the repo-local dormancy test.
+- `verdict.py` — the band ladder. The discriminator is whether the identity was
+  active *across* the ownership gap, not how long ago the gap closed.
+- Attached to the case as `history_before_commit.author_identity_history.
+  domain_provenance` and read by the triage model as evidence, not emitted as a
+  standalone finding. Off unless `SIFT_DOMAIN_PROVENANCE=1`.
+
 ### CLI Entry Points (defined in pyproject.toml)
 
 - `sift-commit` → `sift.cli.analyze_commit:main`
 - `sift-pr` → `sift.cli.analyze_pr:main` (supports GitHub event.json parsing)
+- `sift-domain` → `sift.cli.domain_provenance:main` (requires the `provenance`
+  extra; guards its own import and exits 2 with an install hint without it)
 
 ### GitHub Action
 
@@ -51,6 +88,12 @@ live model are opt-in behind `SIFT_FIXTURE_LIVE=1`.
 
 ### Environment Variables
 
+- `SIFT_DOMAIN_PROVENANCE=1` — enable domain-provenance evidence during case
+  building. Off by default: it is the only part of case building that makes
+  outbound network requests.
+- `SIFT_FIXTURE_LIVE` — fixture cache mode for `sift/provenance/http_cache.py`.
+  Unset replays recorded responses (offline, deterministic, a miss raises); `1`
+  fetches live and records on miss; `refresh` re-records unconditionally.
 - `ANTHROPIC_API_KEY` — required for the anthropic provider
 - `GITHUB_TOKEN` — for PR social context fetching
 - `GITHUB_EVENT_PATH` / `GITHUB_WORKSPACE` — set automatically in GitHub Actions

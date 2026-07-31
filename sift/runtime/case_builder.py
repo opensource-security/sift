@@ -251,6 +251,187 @@ def summarize_identity_variants(
     )[:limit]
 
 
+DOMAIN_PROVENANCE_ENV = "SIFT_DOMAIN_PROVENANCE"
+
+
+def build_domain_provenance_evidence(
+    repo_path: Path,
+    *,
+    commit_payload: dict[str, Any],
+    author_identity_history: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Did the author's email domain change hands since they started using it?
+
+    Off unless `SIFT_DOMAIN_PROVENANCE=1`: this is the only part of case building
+    that makes outbound network requests, and enabling it silently would add
+    third-party egress to every existing analysis.
+
+    Returns None when disabled or unavailable so the evidence section is *absent*
+    rather than present-and-clean. A model told "provenance: clean" when the
+    lookup actually failed is worse off than a model told nothing, so the four
+    states are kept distinct:
+
+        supporting   a discontinuity was found
+        counter      the domain was held continuously, or the gap was committed across
+        unavailable  the lookup was attempted and failed
+        declined     no measurable domain (noreply address, shared mailbox provider)
+
+    The `sift[provenance]` extra is imported lazily. Nothing in `sift.runtime` may
+    import `sift.provenance` at module scope, or the base install breaks.
+    """
+    import os
+
+    if (os.environ.get(DOMAIN_PROVENANCE_ENV) or "").strip() != "1":
+        return None
+
+    try:
+        from sift.provenance import assess_identity
+        from sift.provenance.verdict import (
+            CLEAN,
+            ROLE_COUNTER,
+            ROLE_DECLINED,
+            ROLE_UNAVAILABLE,
+        )
+    except ImportError as exc:
+        return {
+            "role": "unavailable",
+            "status": "extra_not_installed",
+            "detail": f"install sift[provenance] to enable ({exc})",
+        }
+
+    author_email = str(commit_payload.get("author_email", "")).strip()
+    if not author_email:
+        return None
+
+    now = datetime.now(timezone.utc)
+    try:
+        assessment = assess_identity(
+            "",
+            now=now,
+            emails=[author_email],
+            identity_history=author_identity_history,
+            repo_path=repo_path,
+        )
+    except Exception as exc:  # noqa: BLE001 - never let a side check break triage
+        return {
+            "role": ROLE_UNAVAILABLE,
+            "status": "lookup_error",
+            "detail": f"{type(exc).__name__}",
+        }
+
+    if assessment.declined and not assessment.verdicts:
+        raw, reason = assessment.declined[0]
+        return {
+            "role": ROLE_DECLINED,
+            "status": "no_measurable_domain",
+            "detail": reason,
+        }
+
+    worst = assessment.worst
+    if worst is None:
+        return {
+            "role": ROLE_UNAVAILABLE,
+            "status": "no_candidate_domains",
+            "detail": "",
+        }
+
+    gap = worst.gap_activity
+    days_since_acquisition = (
+        (now - worst.held_since).days if worst.held_since is not None else None
+    )
+    return {
+        "role": worst.role,
+        "status": worst.band,
+        "confidence": worst.confidence,
+        "domain": worst.domain,
+        "registration_began_at": (
+            worst.held_since.date().isoformat() if worst.held_since else ""
+        ),
+        "days_since_registration": days_since_acquisition,
+        "identity_first_used_domain_at": (
+            worst.used_since.first_seen.date().isoformat() if worst.used_since else ""
+        ),
+        "anchor_kind": worst.used_since.kind if worst.used_since else "",
+        "anchor_strength": worst.used_since.strength if worst.used_since else "",
+        "activity_across_gap": gap.verdict if gap else "",
+        "commits_across_gap": gap.commits_in_gap if gap else None,
+        "same_signing_key_across_gap": gap.same_signing_key if gap else None,
+        "gap_activity_scope": gap.scope if gap else "",
+        "corroborated_by": sorted({d.kind for d in worst.corroboration}),
+        "reasons": list(worst.reasons),
+        "is_counter_evidence": worst.role == ROLE_COUNTER or worst.band == CLEAN,
+        # Expiry/redemption findings are deliberately excluded: they concern a
+        # trusted person's future risk rather than this commit, and publishing
+        # them is an attack roadmap. `sift-domain` surfaces them instead.
+        "prospective_notes_withheld": len(worst.prospective),
+    }
+
+
+def render_domain_provenance_lines(author_identity_history: dict[str, Any]) -> list[str]:
+    """Render the domain-provenance block for the model's evidence text.
+
+    The model sees only the rendered evidence block, never the raw case JSON, so
+    without these lines the `domain_provenance` evidence ref in `primary.py` would
+    point at a field the model cannot read -- a silent no-op rather than a visible
+    failure. An absent block renders nothing at all, which is deliberate: absent
+    must not look like clean.
+    """
+    provenance = author_identity_history.get("domain_provenance")
+    if not provenance:
+        return []
+
+    role = str(provenance.get("role") or "")
+    status = str(provenance.get("status") or "")
+    lines = ["", "## Author Email Domain Provenance"]
+
+    if role in ("unavailable", "declined"):
+        lines.append(
+            f"- Result: {role} ({status}). This is NOT a clean result -- the check "
+            f"could not answer. Do not treat it as evidence the identity is sound."
+        )
+        if provenance.get("detail"):
+            lines.append(f"- Detail: {provenance.get('detail')}")
+        return lines
+
+    lines.append(
+        f"- Result: {status} ({provenance.get('confidence') or 'unknown'} confidence), "
+        f"role={role}"
+    )
+    lines.append(
+        f"- Domain {provenance.get('domain') or '(unknown)'}: current registration began "
+        f"{provenance.get('registration_began_at') or '(unknown)'}"
+        + (
+            f" ({provenance.get('days_since_registration')} days ago)"
+            if provenance.get("days_since_registration") is not None
+            else ""
+        )
+        + f"; identity first used it {provenance.get('identity_first_used_domain_at') or '(unknown)'}"
+    )
+    lines.append(
+        f"- Use anchor: {provenance.get('anchor_kind') or '(none)'} "
+        f"(strength {provenance.get('anchor_strength') or 'unknown'})"
+    )
+    if provenance.get("activity_across_gap"):
+        lines.append(
+            f"- Author activity across the ownership gap: "
+            f"{provenance.get('activity_across_gap')} "
+            f"({provenance.get('commits_across_gap')} commit(s), "
+            f"same_signing_key={format_bool_unknown(provenance.get('same_signing_key_across_gap'))}, "
+            f"scope={provenance.get('gap_activity_scope') or 'unknown'})"
+        )
+    corroborated = provenance.get("corroborated_by") or []
+    lines.append(
+        f"- Corroboration: {', '.join(corroborated) if corroborated else '(none available)'}"
+    )
+    for reason in provenance.get("reasons") or []:
+        lines.append(f"- {reason}")
+    if role == "counter":
+        lines.append(
+            "- This is counter-evidence: it argues against an account-takeover reading."
+        )
+    return lines
+
+
 def summarize_author_identity_history(
     repo_path: Path,
     *,
@@ -1525,6 +1706,13 @@ def build_realtime_history_features(
         repo_is_shallow=repo_is_shallow,
         max_author_history_commits=max_author_surface_commits,
     )
+    domain_provenance = build_domain_provenance_evidence(
+        repo_path,
+        commit_payload=commit_payload,
+        author_identity_history=author_identity_history,
+    )
+    if domain_provenance is not None:
+        author_identity_history["domain_provenance"] = domain_provenance
     author_temporal_complexity_history = summarize_author_temporal_complexity_history(
         repo_path,
         commit_payload=commit_payload,
@@ -2242,6 +2430,7 @@ def render_agent_prompt(case: CommitCase, gharchive_mode: str, temporal_mode: st
             )
         if identity_flags:
             lines.append(f"- Identity flags: {', '.join(identity_flags)}")
+        lines.extend(render_domain_provenance_lines(author_identity_history))
     author_surface_history = history.get("author_surface_history") or {}
     if author_surface_history:
         lines.append("")
