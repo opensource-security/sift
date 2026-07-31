@@ -164,7 +164,13 @@ def assess_identity(
             if resolved.status == names.REJECTED:
                 assessment.rejected.append((email, resolved.reason))
                 continue
-            candidates.setdefault(resolved.registrable, email)
+            # Not setdefault: a domain seeded from an anchor carries an empty
+            # email, and the gap-activity test needs an address to run `git log
+            # --author` against. Leaving it empty silently disabled the
+            # dormant-vs-continuous discriminator -- the thing that separates a
+            # NOTE from a CRITICAL.
+            if not candidates.get(resolved.registrable):
+                candidates[resolved.registrable] = email
 
         for domain in sorted(candidates):
             assessment.verdicts.append(

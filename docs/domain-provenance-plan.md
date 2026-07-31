@@ -546,15 +546,72 @@ publish registry in a release workflow), prior present versus absent:
 The prior adds a finding, raises the severity ceiling, and gets cited. Re-run with
 `SIFT_FIXTURE_LIVE=1 ANTHROPIC_API_KEY=... python tests/test_domain_provenance_prior.py`.
 
+### 7. Three wiring defects the fixtures could not see
+
+Found by running the pipeline against a real repository (`endee-io/endee`, 95
+commits) with a synthetic committer, rather than by constructing `UseAnchor`s in a
+test. Every fixture passed while all three were live, because the fixtures enter at
+`assess_domain` and the defects were all upstream of it, in
+`case_builder` history -> anchor -> `gap_activity`. Pinned by
+`tests/test_provenance_pipeline_anchors.py`, which fails on each.
+
+1. **The single-address contributor had no anchor at all.**
+   `anchors_from_identity_history` read only `author_email_variants`, which holds
+   the *alternate* addresses a contributor has used. Someone who has always used
+   one address has an empty list; their earliest date is in the flat
+   `author_email_first_seen_at` field. So the common case — and the one this check
+   exists for — produced no anchor and therefore a permanent `UNKNOWN`, whatever
+   RDAP said.
+
+2. **The anchoring commit counted as activity inside its own gap.** The gap window
+   opens at `anchor.first_seen`, and `git log --since` is inclusive, so the very
+   commit that established the anchor fell inside the window it defined. Any
+   repo-local anchor therefore read `CONTINUOUS`, and a real takeover was reported
+   as **counter-evidence** — the worst available direction for this check to fail.
+   `dormant` was unreachable by this path. The window now opens strictly after the
+   anchor.
+
+3. **The gap test silently never ran when an anchor existed.** `assess_identity`
+   seeds candidate domains from anchors with an empty email, and the subsequent
+   `setdefault` could not overwrite it, so `author_email` stayed empty and
+   `assess_domain_provenance` skipped `gap_activity` — which needs an address for
+   `git log --author`. The dormant-vs-continuous discriminator, the thing that
+   separates `NOTE` from `CRITICAL`, did no work precisely whenever an anchor was
+   available.
+
+The shared lesson is that all three were *wiring*, not logic, and all three failed
+toward silence or toward counter-evidence rather than toward a false alarm. A
+fixture suite that constructs its own inputs cannot see this class of defect; only
+an end-to-end run against real history can.
+
 ### Remaining open questions
 
-1. Build the GH Archive `(email -> earliest push)` index, which would restore a
+1. **`gap_activity` scans `--all`, which includes attacker-pushable refs.**
+   `_git_log_window` and `_commits_outside` pass `--all`, so the gap test counts
+   commits on *any* ref in the repository rather than on the history under review.
+   Measured: a second local branch carrying backdated in-gap commits raised the
+   count from 1 to 4 and flipped the verdict to `continuous` counter-evidence.
+   Under `pull_request_target` the PR head is fetched into the analysis repo, so a
+   contributor who can push a branch can manufacture the commits that suppress
+   their own discontinuity signal. Counter-evidence sourced from attacker-writable
+   refs is worse than no counter-evidence. Not fixed here because the correct scope
+   is a decision — the observed ref, the default branch, or refs excluding the PR
+   head — and it needs threading through `assess_identity`. Highest-priority
+   follow-up alongside the GH Archive index.
+2. Build the GH Archive `(email -> earliest push)` index, which would restore a
    strong anchor for identities with no published GPG key and enable account-wide
    gap scope.
-2. Whether `declined` (nothing measurable) deserves its own evidence role in the
+3. Whether the `.io` and `.me` ccTLDs (and others like them) deserve a documented
+   coverage note: IANA's live RDAP bootstrap publishes **no service** for either, so
+   every domain under them is a structural `UNKNOWN`, not a lookup failure. Measured
+   against `endee.io` and `dwivedi.me`. The bundled snapshot is not stale — it
+   matches `data.iana.org/rdap/dns.json` exactly; the registries simply never
+   deployed RDAP. This silently exempts a popular slice of developer-vanity domains
+   from the check.
+4. Whether `declined` (nothing measurable) deserves its own evidence role in the
    case rather than sharing rendering with `unavailable`. Both are currently marked
    "NOT a clean result", which is the property that matters, but they are different
    facts.
-3. Whether the scheduled variant over a repo's own committers and CODEOWNERS should
+5. Whether the scheduled variant over a repo's own committers and CODEOWNERS should
    share the PR-time band ladder or use a lower threshold, given that its audience is
    auditing rather than reviewing.

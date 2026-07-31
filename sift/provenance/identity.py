@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -236,9 +236,26 @@ def anchors_from_identity_history(
     date forgery, not of long-standing use.
     """
     anchors: dict[str, UseAnchor] = {}
-    buckets = identity_history.get("author_email_variants") or identity_history.get(
-        "email_variants"
-    ) or []
+    buckets = list(
+        identity_history.get("author_email_variants")
+        or identity_history.get("email_variants")
+        or []
+    )
+
+    # `author_email_variants` holds only the *alternate* addresses. A contributor
+    # who has always used one address has an empty list, and their first-seen date
+    # lives in the flat `author_email_first_seen_at` field instead. Omitting it
+    # left the single-address contributor -- the common case, and the one this
+    # check exists for -- with no anchor at all, hence a permanent UNKNOWN.
+    current = identity_history.get("current_author")
+    if isinstance(current, dict):
+        primary_email = str(current.get("email") or "")
+        primary_first_seen = str(
+            identity_history.get("author_email_first_seen_at") or ""
+        )
+        if primary_email and primary_first_seen:
+            buckets.append({"email": primary_email, "first_seen_at": primary_first_seen})
+
     for entry in buckets:
         if not isinstance(entry, dict):
             continue
@@ -390,8 +407,16 @@ def gap_activity(
     if gap_end <= gap_start:
         return None
 
+    # Strictly after `gap_start`. The anchor is itself the earliest commit at
+    # that timestamp, and `git log --since` is inclusive, so an inclusive window
+    # counts the anchoring commit as activity *inside* the gap it defines. Every
+    # repo-local anchor then read as CONTINUOUS -- inverting a takeover into
+    # counter-evidence, the worst possible direction for this check to fail.
     in_gap = _git_log_window(
-        Path(repo_path), author_email=author_email, since=gap_start, until=gap_end
+        Path(repo_path),
+        author_email=author_email,
+        since=gap_start + timedelta(seconds=1),
+        until=gap_end,
     )
     before, after = _commits_outside(
         Path(repo_path), author_email=author_email, before=gap_start, after=gap_end
