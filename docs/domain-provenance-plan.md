@@ -584,6 +584,31 @@ toward silence or toward counter-evidence rather than toward a false alarm. A
 fixture suite that constructs its own inputs cannot see this class of defect; only
 an end-to-end run against real history can.
 
+### 8. The fixture cache was the production default, so the check never ran
+
+The first real Actions run (endee mirror, PR #1) came back with the triage model
+told *"domain provenance is unavailable"* for a domain whose RDAP record resolves
+fine. Cause: `http_cache.current_mode()` returned **replay** whenever
+`SIFT_FIXTURE_LIVE` was unset -- which is every production run. The first RDAP
+request raised `CacheMiss`, `build_domain_provenance_evidence` caught it as a
+generic lookup failure, and the evidence degraded to `unavailable`. The check had
+never worked outside the test suite.
+
+This is the same failure mode as change 5, one layer down, and it survived the
+same way: the fixtures pass *because* replay is their default, so nothing in the
+suite could distinguish "replays correctly" from "only ever replays". The action's
+own comment warned about silently no-opping in production while passing locally,
+and it happened anyway in the one place nobody was looking.
+
+Fixed by inverting the default: live is what an unconfigured run does, and
+`SIFT_FIXTURE_REPLAY=1` is an explicit opt-in that the fixtures now set for
+themselves. A test harness must never be the default path for shipped code.
+`tests/test_provenance_pipeline_anchors.py` pins the default.
+
+Worth noting what this cost: everything upstream of it was already correct, and a
+single unset environment variable was enough to make the entire feature invisible
+while every test was green.
+
 ### Remaining open questions
 
 1. **`gap_activity` scans `--all`, which includes attacker-pushable refs.**

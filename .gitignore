@@ -5,3 +5,6 @@ dist/
 build/
 .venv/
 .env
+
+# Downloaded CI artifacts from ad-hoc runs.
+.runartifacts/

@@ -4,12 +4,19 @@ Implemented as an `httpx.BaseTransport` wrapper rather than a helper function so
 that no caller can bypass it by constructing its own client, and so the same
 object serves as both the production cache and the test fixture store.
 
-Three modes, via `SIFT_FIXTURE_LIVE`:
+Four modes. The default is **live**, because this runs in production; replay is an
+explicit opt-in for tests.
 
-  unset  -- replay only. A cache miss raises `CacheMiss`. Level-1 tests are
-            therefore free, offline, and deterministic.
-  "1"    -- live fetch, recording on miss.
-  "refresh" -- live fetch always, overwriting existing records.
+  unset            -- live fetch, no recording. What a real analysis run does.
+  SIFT_FIXTURE_REPLAY=1 -- replay only. A cache miss raises `CacheMiss`, so
+                      level-1 tests are free, offline, and deterministic.
+  SIFT_FIXTURE_LIVE=1   -- live fetch, recording on miss. For adding fixtures.
+  SIFT_FIXTURE_LIVE=refresh -- live fetch always, overwriting existing records.
+
+The default used to be replay, which meant every production run raised `CacheMiss`
+on its first RDAP request and the whole check degraded to "unavailable" while the
+fixture suite passed. Measured on a real Actions run before this was fixed. A test
+harness must never be the default path for shipped code.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ _KEPT_HEADERS = ("content-type", "retry-after")
 MODE_REPLAY = "replay"
 MODE_RECORD = "record"
 MODE_REFRESH = "refresh"
+MODE_LIVE = "live"
 
 
 class CacheMiss(RuntimeError):
@@ -52,7 +60,11 @@ def current_mode() -> str:
         return MODE_RECORD
     if raw == "refresh":
         return MODE_REFRESH
-    return MODE_REPLAY
+    if (os.environ.get("SIFT_FIXTURE_REPLAY") or "").strip() == "1":
+        return MODE_REPLAY
+    # Live is the default: this package ships in an Action, and a fixture cache
+    # that is never populated there would make every lookup a CacheMiss.
+    return MODE_LIVE
 
 
 @dataclass
@@ -142,7 +154,8 @@ class RecordingTransport(httpx.BaseTransport):
         response = self._inner.handle_request(request)
         response.read()
         self.stats.fetches += 1
-        self._store(url, response)
+        if self.mode != MODE_LIVE:
+            self._store(url, response)
         return response
 
     def close(self) -> None:

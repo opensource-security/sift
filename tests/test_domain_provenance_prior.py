@@ -33,6 +33,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# Replay is opt-in now that production defaults to live network access. Without
+# this, running the fixtures offline would silently start making real RDAP/CT
+# requests instead of failing loudly on a missing recording.
+if not os.environ.get("SIFT_FIXTURE_LIVE"):
+    os.environ["SIFT_FIXTURE_REPLAY"] = "1"
+
+
 PROVENANCE_REF = "history_before_commit.author_identity_history.domain_provenance"
 
 # A commit worth taking an account over: it changes the release workflow. The

@@ -198,6 +198,48 @@ def test_anchor_seeded_domain_keeps_its_email() -> None:
     print("  ok  anchor-seeded domain retains its email for the gap-activity query")
 
 
+def test_production_default_is_live_not_replay() -> None:
+    """A shipped run must not depend on a fixture cache it will never have.
+
+    `current_mode()` used to return replay whenever `SIFT_FIXTURE_LIVE` was unset,
+    which is every production run. The first RDAP request raised `CacheMiss`, the
+    evidence hook swallowed it as "unavailable", and the whole check silently
+    no-opped in the Action while the fixture suite passed. Observed on a real
+    Actions run: the triage model was told "domain provenance is unavailable" for a
+    domain whose RDAP record resolves fine.
+    """
+    from sift.provenance import http_cache
+
+    saved = {
+        name: os.environ.get(name)
+        for name in ("SIFT_FIXTURE_LIVE", "SIFT_FIXTURE_REPLAY")
+    }
+    try:
+        for name in saved:
+            os.environ.pop(name, None)
+        assert http_cache.current_mode() == http_cache.MODE_LIVE, (
+            "with no fixture env set -- i.e. in production -- the transport must "
+            f"go to the network, got {http_cache.current_mode()!r}"
+        )
+
+        os.environ["SIFT_FIXTURE_REPLAY"] = "1"
+        assert http_cache.current_mode() == http_cache.MODE_REPLAY, (
+            "tests must still be able to opt into offline replay"
+        )
+
+        del os.environ["SIFT_FIXTURE_REPLAY"]
+        os.environ["SIFT_FIXTURE_LIVE"] = "1"
+        assert http_cache.current_mode() == http_cache.MODE_RECORD
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    print("  ok  production defaults to live; replay is an explicit test opt-in")
+
+
 def main() -> int:
     if not _HAVE_EXTRA:
         print("skip: needs the provenance extra (uv pip install -e '.[provenance]')")
@@ -207,6 +249,7 @@ def main() -> int:
         test_single_address_contributor_still_gets_an_anchor,
         test_anchor_commit_does_not_count_as_activity_inside_its_own_gap,
         test_anchor_seeded_domain_keeps_its_email,
+        test_production_default_is_live_not_replay,
     ]
     failed = 0
     print("provenance pipeline wiring: history -> anchor -> gap -> verdict\n")
