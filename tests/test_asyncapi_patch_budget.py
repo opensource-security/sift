@@ -32,50 +32,32 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).parent))
+
+from fixture_repos import ensure_commits  # noqa: E402
 
 from sift.runtime.case_builder import load_patch  # noqa: E402
 
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "asyncapi_lockfile_noise_2026.json").read_text()
 )
-CACHE = Path(
-    os.environ.get("SIFT_FIXTURE_CACHE", str(Path.home() / ".cache" / "sift-fixtures"))
-)
 DEFAULT_BUDGET = FIXTURE["pinned_behavior"]["default_max_patch_chars"]
 
 
 def ensure_commit() -> Path:
-    """Shallow-fetch the fixture commit and its parent into a bare cache repo."""
-    repo_dir = CACHE / (FIXTURE["repo"].replace("/", "__") + ".git")
-    sha = FIXTURE["sha"]
-    if repo_dir.exists():
-        probe = subprocess.run(
-            ["git", "-C", str(repo_dir), "cat-file", "-e", f"{sha}^{{commit}}"],
-            capture_output=True,
-        )
-        if probe.returncode == 0:
-            return repo_dir
+    """Locate the fixture commit and its parent -- local mirror first.
 
-    repo_dir.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", "--bare", str(repo_dir)], check=True)
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-    fetch = subprocess.run(
-        ["git", "-C", str(repo_dir), "fetch", "-q", "--depth", "2",
-         f"https://github.com/{FIXTURE['repo']}", sha],
-        capture_output=True, text=True, env=env,
-    )
-    if fetch.returncode != 0:
-        raise RuntimeError(
-            f"could not fetch {FIXTURE['repo']}@{sha[:12]} "
-            f"(network required on first run): {fetch.stderr.strip()}"
-        )
-    return repo_dir
+    This used to shallow-fetch straight from GitHub. Recovering the 2026 incident
+    corpus showed why that is not safe to rely on: malicious commits get reaped
+    after disclosure, sometimes network-wide while the repository stays live, and
+    the fixture only finds out when it starts erroring. See fixture_repos.py.
+    """
+    return ensure_commits(FIXTURE["repo"], [FIXTURE["sha"], FIXTURE["parent_sha"]])
 
 
 def file_offsets(patch: str) -> dict[str, int]:

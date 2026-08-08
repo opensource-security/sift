@@ -1,0 +1,120 @@
+{
+  "fixture": "injective_ato_timezone_2026",
+  "question": "Does the detector fire on an established maintainer committing from a never-before-seen timezone, and stay silent on that same maintainer's remediation commit?",
+  "repo": "InjectiveLabs/injective-ts",
+  "incident": "injective_ato_2026",
+  "disclosed": "2026-07-08",
+  "provenance": {
+    "sources": [
+      "Datadog Security Labs"
+    ],
+    "notes": "Datadog, verbatim: the malicious commits were 'performed from a machine configured in the UTC-4 timezone, which had never occurred before for the user'. Live approximately 49 minutes before the maintainer reverted. This is the analyst-confirmed positive control.",
+    "recovered": "Reverted-on-top and still reachable. Mirrored 2026-08-08 to upstream-mirrors/injective-ts.git under refs/mirror/<sha>.",
+    "raw_offsets_confirmed": "Vendor reporting renders these in UTC. The raw git author fields recovered here carry -0400 on all three payload commits and +0800 on the revert, matching Datadog's claim exactly."
+  },
+  "commits": {
+    "malicious_1": {
+      "sha": "01219285b16ce85c70cdf47a71a551ff5e41f1ed",
+      "parent_sha": "ccd8abbad074105a35af62f69a8c2b277e005934",
+      "author_name": "thomasRalee",
+      "author_email": "thomas.leera@gmail.com",
+      "authored_at": "2026-07-08T16:24:40-04:00",
+      "committed_at": "2026-07-08T16:24:40-04:00",
+      "subject": "chore: add key derivation telemetry for SDK usage analytics",
+      "expected": {
+        "current_timezone_offset_minutes": -240,
+        "current_timezone_prior_count": 0,
+        "timezone_first_seen": true,
+        "prior_mode_timezone_offset_minutes": 480,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": -720
+      }
+    },
+    "malicious_2": {
+      "sha": "fd105db9073a21a3b58d5bd32622204ec8b57993",
+      "parent_sha": "01219285b16ce85c70cdf47a71a551ff5e41f1ed",
+      "author_name": "thomasRalee",
+      "author_email": "thomas.leera@gmail.com",
+      "authored_at": "2026-07-08T16:48:14-04:00",
+      "committed_at": "2026-07-08T16:48:14-04:00",
+      "subject": "chore: add key derivation telemetry for SDK usage analytics",
+      "expected": {
+        "current_timezone_offset_minutes": -240,
+        "current_timezone_prior_count": 1,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": 480,
+        "prior_mode_timezone_count": 19,
+        "timezone_drift_from_prior_mode_minutes": -720
+      }
+    },
+    "malicious_3": {
+      "sha": "5486f13e799d9c90095c5f581a04ad867d768f66",
+      "parent_sha": "fd105db9073a21a3b58d5bd32622204ec8b57993",
+      "author_name": "thomasRalee",
+      "author_email": "thomas.leera@gmail.com",
+      "authored_at": "2026-07-08T16:54:02-04:00",
+      "committed_at": "2026-07-08T16:54:02-04:00",
+      "subject": "chore: add key derivation telemetry for SDK usage analytics",
+      "expected": {
+        "current_timezone_offset_minutes": -240,
+        "current_timezone_prior_count": 2,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": 480,
+        "prior_mode_timezone_count": 18,
+        "timezone_drift_from_prior_mode_minutes": -720
+      }
+    },
+    "benign_revert_control": {
+      "sha": "7c4b1a092d8cbbcda469bda5a88db2a742d15b4a",
+      "parent_sha": "c82639921b186d09238817764faf86bc838355d4",
+      "author_name": "thomasRalee",
+      "author_email": "thomas.leera@gmail.com",
+      "authored_at": "2026-07-09T05:16:32+08:00",
+      "committed_at": "2026-07-09T05:16:59+08:00",
+      "subject": "revert: exfiltration telemetry",
+      "expected": {
+        "current_timezone_offset_minutes": 480,
+        "current_timezone_prior_count": 17,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": 480,
+        "prior_mode_timezone_count": 17,
+        "timezone_drift_from_prior_mode_minutes": 0
+      }
+    }
+  },
+  "roles": {
+    "malicious_1": "First payload commit from UTC-4. first_seen True against a baseline of 20 consecutive +0800 commits.",
+    "malicious_2": "Second payload commit. Poisoned by malicious_1.",
+    "malicious_3": "Third payload commit.",
+    "benign_revert_control": "The maintainer's own cleanup, 22 minutes later, from the habitual +0800. Drift 0. Doubles as the remediation-commit-misflag control: a naive detector that keys on 'commit near a known-bad commit' flags this."
+  },
+  "pinned_behavior": {
+    "burst_decay": {
+      "prior_count_by_position": [
+        0,
+        1,
+        2
+      ],
+      "mode_support_by_position": [
+        20,
+        19,
+        18
+      ],
+      "first_seen_by_position": [
+        true,
+        false,
+        false
+      ],
+      "drift_is_stable_minutes": -720
+    },
+    "revert_is_clean": {
+      "drift_minutes": 0,
+      "note": "The attacker's three commits are inside the revert's own history window (prior_count for +0800 is 17, not 20), yet the revert still scores drift 0. Pins that burst poisoning does not leak into the remediation commit."
+    }
+  },
+  "why_this_fixture": [
+    "The only incident with analyst-confirmed raw timezone offsets, so it validates the detector against an external source rather than against our own measurement.",
+    "Carries a matched benign commit by the same identity 22 minutes after the attack, which is the cleanest available remediation-commit negative.",
+    "Direction of drift is opposite to keyv (-720 vs +420), so together they pin that the detector keys on magnitude of deviation and not on a hardcoded sense of 'suspicious' offsets like UTC."
+  ]
+}
