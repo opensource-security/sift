@@ -75,6 +75,7 @@ def assess_domain_provenance(
     author_email: str = "",
     client=None,
     with_corroboration: bool = True,
+    history_revisions: list[str] | None = None,
 ) -> DomainVerdict:
     """Full pipeline for one already-validated registrable domain."""
     owns_client = client is None
@@ -96,6 +97,7 @@ def assess_domain_provenance(
                 author_email=author_email,
                 gap_start=anchor.first_seen,
                 gap_end=registration.registered_at,
+                history_revisions=history_revisions,
             )
 
         corroboration: tuple[Discontinuity, ...] = ()
@@ -130,6 +132,7 @@ def assess_identity(
     repo_path: Path | None = None,
     client=None,
     with_corroboration: bool = True,
+    history_revisions: list[str] | None = None,
 ) -> IdentityAssessment:
     """Assess every domain an identity is known by.
 
@@ -182,6 +185,7 @@ def assess_identity(
                     author_email=candidates.get(domain, ""),
                     client=client,
                     with_corroboration=with_corroboration,
+                    history_revisions=history_revisions,
                 )
             )
     finally:

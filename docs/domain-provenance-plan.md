@@ -691,6 +691,20 @@ issue. Verify the signature first, then change the ladder, then invert that test
    is a decision — the observed ref, the default branch, or refs excluding the PR
    head — and it needs threading through `assess_identity`. Highest-priority
    follow-up alongside the GH Archive index.
+
+   > **Resolved (2026-08-21).** The scope decision: the **default branch**, or
+   > an explicit `history_revisions` list threaded from the caller — never
+   > `--all`, with no silent fallback. `case_builder` passes its
+   > `default_branch_ref` (falling back to the identity history's baseline
+   > revision); a bare `gap_activity` call resolves `origin/HEAD` then `HEAD`,
+   > and if no trusted revision resolves, the gap is *not tested* (None →
+   > INDETERMINATE) rather than tested against untrusted history. The
+   > error-direction trade is deliberate: activity on a legitimate long-lived
+   > feature branch may now read `dormant` instead of `continuous` — a
+   > false-*suspicion* direction — which is the acceptable side of the
+   > asymmetry. Pinned by `tests/test_gap_activity_ref_scope.py`, which
+   > reproduces the endee shape (same-author in-gap commit on a side branch
+   > only) and asserts it no longer flips the verdict.
 2. Build the GH Archive `(email -> earliest push)` index, which would restore a
    strong anchor for identities with no published GPG key and enable account-wide
    gap scope.

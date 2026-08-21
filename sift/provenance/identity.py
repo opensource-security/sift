@@ -317,10 +317,32 @@ def merge_anchors(*sources: dict[str, UseAnchor]) -> dict[str, UseAnchor]:
 # -- gap activity --------------------------------------------------------------
 
 
+def _trusted_revisions(repo_path: Path) -> list[str]:
+    """The repo's default branch, the only ref gap evidence may be read from.
+
+    Never `--all`: under `pull_request_target` the PR head (and any branch the
+    contributor can push) is present in the analysis repo, so an attacker could
+    manufacture the commits that suppress their own discontinuity signal.
+    Counter-evidence sourced from attacker-writable refs is worse than no
+    counter-evidence (docs/domain-provenance-plan.md, open question 1 —
+    resolved 2026-08-21). An empty return means the scope could not be
+    resolved and the gap test must not run.
+    """
+    for probe in (["symbolic-ref", "-q", "refs/remotes/origin/HEAD"], ["symbolic-ref", "-q", "HEAD"]):
+        code, out, _ = run_git(repo_path, *probe)
+        ref = out.strip()
+        if code == 0 and ref:
+            verify_code, _, _ = run_git(repo_path, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}")
+            if verify_code == 0:
+                return [ref]
+    return []
+
+
 def _git_log_window(
     repo_path: Path,
     *,
     author_email: str,
+    revisions: list[str],
     since: datetime,
     until: datetime,
 ) -> list[tuple[str, str]]:
@@ -328,7 +350,7 @@ def _git_log_window(
     code, out, _ = run_git(
         repo_path,
         "log",
-        "--all",
+        *revisions,
         "--no-merges",
         f"--author={author_email}",
         "--fixed-strings",
@@ -349,7 +371,12 @@ def _git_log_window(
 
 
 def _commits_outside(
-    repo_path: Path, *, author_email: str, before: datetime, after: datetime
+    repo_path: Path,
+    *,
+    author_email: str,
+    revisions: list[str],
+    before: datetime,
+    after: datetime,
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """Commits by this author strictly before and strictly after the gap.
 
@@ -359,7 +386,7 @@ def _commits_outside(
     """
     base = [
         "log",
-        "--all",
+        *revisions,
         "--no-merges",
         f"--author={author_email}",
         "--fixed-strings",
@@ -392,6 +419,7 @@ def gap_activity(
     gap_start: datetime,
     gap_end: datetime,
     scope: str = "repo_local",
+    history_revisions: list[str] | None = None,
 ) -> GapActivity | None:
     """Was this identity active across the ownership gap?
 
@@ -401,10 +429,23 @@ def gap_activity(
     no continuity claim for a takeover to break -- but it means this discriminator
     does no work on exactly the population a reviewer is least sure about.
     Account-wide scope via a GH Archive index is what would fix it.
+
+    Evidence is read only from `history_revisions` (the caller's trusted
+    baseline — the ref under review's default-branch side), or, when absent,
+    the repo's own default branch. Never from `--all`: attacker-pushable refs
+    could otherwise manufacture the in-gap commits that suppress a
+    discontinuity. If no trusted revision resolves, the gap is not tested
+    (returns None → INDETERMINATE downstream) rather than tested against
+    untrusted history.
     """
     if not repo_path or not Path(repo_path).exists():
         return None
     if gap_end <= gap_start:
+        return None
+    revisions = [r for r in (history_revisions or []) if r and r.strip()]
+    if not revisions:
+        revisions = _trusted_revisions(Path(repo_path))
+    if not revisions:
         return None
 
     # Strictly after `gap_start`. The anchor is itself the earliest commit at
@@ -415,11 +456,16 @@ def gap_activity(
     in_gap = _git_log_window(
         Path(repo_path),
         author_email=author_email,
+        revisions=revisions,
         since=gap_start + timedelta(seconds=1),
         until=gap_end,
     )
     before, after = _commits_outside(
-        Path(repo_path), author_email=author_email, before=gap_start, after=gap_end
+        Path(repo_path),
+        author_email=author_email,
+        revisions=revisions,
+        before=gap_start,
+        after=gap_end,
     )
 
     # `%GK` is empty on unsigned commits and "0" on some git versions; neither is

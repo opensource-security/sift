@@ -260,6 +260,7 @@ def build_domain_provenance_evidence(
     *,
     commit_payload: dict[str, Any],
     author_identity_history: dict[str, Any],
+    history_revisions: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Did the author's email domain change hands since they started using it?
 
@@ -312,6 +313,7 @@ def build_domain_provenance_evidence(
             emails=[author_email],
             identity_history=author_identity_history,
             repo_path=repo_path,
+            history_revisions=history_revisions,
         )
     except Exception as exc:  # noqa: BLE001 - never let a side check break triage
         return {
@@ -1711,6 +1713,9 @@ def build_realtime_history_features(
         repo_path,
         commit_payload=commit_payload,
         author_identity_history=author_identity_history,
+        # Gap evidence must come from the trusted baseline, never attacker-
+        # pushable refs; empty resolves to the repo's own default branch.
+        history_revisions=[r for r in (default_branch_ref,) if r] or [r for r in history_roots[:1] if r],
     )
     if domain_provenance is not None:
         author_identity_history["domain_provenance"] = domain_provenance
