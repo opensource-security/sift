@@ -137,6 +137,24 @@ domain left the identity's control.
   domain_provenance` and read by the triage model as evidence, not emitted as a
   standalone finding. Off unless `SIFT_DOMAIN_PROVENANCE=1`.
 
+### Two email-domain evidence paths
+
+Reconciled per `docs/plans/2026-08-21-001-merge-domain-provenance-plan.md`; the
+snapshot file is the seam, and the one-way import rule is why composition
+happens through data, never through imports.
+
+| | offline snapshot (`email_domain_intel` param) | live engine (`SIFT_DOMAIN_PROVENANCE=1`) |
+|---|---|---|
+| module | `sift/runtime/email_domain.py` (stdlib) | `sift/provenance/` (extra) |
+| lookups | none — reads a snapshot written out-of-band | live RDAP/CT/DNS, replayable cache |
+| unique evidence | forged-bot/freemail/infra taxonomy | band ladder, GPG anchors, gap activity |
+| case block | `email_domain_context` | `author_identity_history.domain_provenance` |
+| resurrection | S4 boolean; prefers a v2 snapshot's band when present | band ladder (authoritative) |
+| writers of the snapshot | stars `scripts/fetch_email_domain_intel.py` (v1, `"writer": "stdlib"`) | `sift.provenance.export_intel.export_intel` (v2, adds `registrable_domain` + `provenance` band block) |
+
+Both switches are independent; either, both, or neither may be on. When both
+render into a prompt, each line names its source and observation time.
+
 ### CLI Entry Points (defined in pyproject.toml)
 
 - `sift-commit` → `sift.cli.analyze_commit:main`

@@ -116,6 +116,39 @@ def test_ctx_style_resurrection_detected_in_realtime() -> None:
     assert "domain resurrection" in rendered
 
 
+def test_v2_snapshot_band_passthrough() -> None:
+    """v2 snapshots (provenance-written) carry registrable_domain + band; the
+    stdlib reader passes them through and renders them, in both modes."""
+    synthetic = FIXTURE["synthetic_resurrection"]
+    entry = dict(synthetic["domain_entry"])
+    entry["registrable_domain"] = "resurrected.example"
+    entry["provenance"] = {
+        "band": "LIKELY",
+        "confidence": "medium",
+        "role": "supporting",
+        "used_since": "2021-03-01T00:00:00Z",
+        "used_anchor_kind": "commit_author_date",
+        "held_since": "2026-06-01T00:00:00Z",
+        "gap_verdict": "dormant",
+        "assessed_at": "2026-08-21T12:00:00Z",
+    }
+    intel = {"snapshot_version": "email_domain_intel_v2", "observed_at": "2026-08-21T12:00:00Z",
+             "writer": "provenance", "domains": {"resurrected.example": entry}}
+    commit = {"author_name": synthetic["author_name"], "author_email": synthetic["author_email"],
+              "committer_name": synthetic["author_name"], "committer_email": synthetic["author_email"]}
+    history = {"anchor_timestamp_utc": "2026-07-01T00:00:00Z",
+               "author_first_seen_same_email_at": synthetic["author_first_seen_same_email_at"]}
+    for mode in ("retrospective", "realtime"):
+        context = build_email_domain_context(commit, history, intel, mode)
+        author = context["author"]
+        assert author["registrable_domain"] == "resurrected.example"
+        assert author["provenance_band"] == "LIKELY", mode
+        assert author["provenance_gap_verdict"] == "dormant"
+        rendered = render_email_domain_evidence(context)
+        assert "provenance verdict: LIKELY" in rendered, mode
+        assert "gap dormant" in rendered
+
+
 def test_render_realtime_omits_dns_lines() -> None:
     retro = render_email_domain_evidence(_context("megalodon_tiledesk", mode="retrospective"))
     realtime = render_email_domain_evidence(_context("megalodon_tiledesk", mode="realtime"))

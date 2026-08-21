@@ -161,10 +161,22 @@ def _role_context(
         "domain_registered_after_author_first_seen": None,
         "mx_present": None,
         "ns_present": None,
+        "registrable_domain": None,
+        "provenance_band": None,
+        "provenance_gap_verdict": None,
+        "provenance_used_since": None,
+        "provenance_held_since": None,
     }
     entry = intel.get("domains", {}).get(domain) if domain else None
     if not entry or classification != "custom":
         return context
+    # v2 fields (provenance-written snapshots); every one is optional.
+    context["registrable_domain"] = entry.get("registrable_domain")
+    provenance = entry.get("provenance") or {}
+    context["provenance_band"] = provenance.get("band")
+    context["provenance_gap_verdict"] = provenance.get("gap_verdict")
+    context["provenance_used_since"] = provenance.get("used_since")
+    context["provenance_held_since"] = provenance.get("held_since")
     rdap = entry.get("rdap") or {}
     context["domain_registered"] = rdap.get("registered")
     context["domain_registered_at"] = rdap.get("registered_at")
@@ -240,6 +252,16 @@ def render_email_domain_evidence(context: dict[str, Any]) -> str:
             )
         if role_ctx.get("domain_registered_after_author_first_seen"):
             parts.append("domain registration POSTDATES this author's first appearance in repo history (possible domain resurrection)")
+        if role_ctx.get("provenance_band"):
+            band_text = f"provenance verdict: {role_ctx['provenance_band']}"
+            if role_ctx.get("provenance_used_since") and role_ctx.get("provenance_held_since"):
+                band_text += (
+                    f" (identity used domain since {role_ctx['provenance_used_since']}, "
+                    f"current registration since {role_ctx['provenance_held_since']}"
+                    + (f"; gap {role_ctx['provenance_gap_verdict']}" if role_ctx.get("provenance_gap_verdict") else "")
+                    + ")"
+                )
+            parts.append(band_text)
         if role_ctx.get("mx_present") is not None:
             parts.append(f"MX present: {role_ctx['mx_present']}")
         lines.append("; ".join(parts))
