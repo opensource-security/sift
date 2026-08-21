@@ -1,0 +1,8 @@
+{
+  "body": "[[\"timestamp\",\"original\",\"digest\",\"statuscode\"],\n[\"20141217063945\",\"http://figlief.com/\",\"SACFIK3GIYGPGNIUWGBXJCO3WZ5XFYR7\",\"301\"],\n[\"20150801081218\",\"http://figlief.com/\",\"SACFIK3GIYGPGNIUWGBXJCO3WZ5XFYR7\",\"301\"],\n[\"20160112165518\",\"http://figlief.com/\",\"SACFIK3GIYGPGNIUWGBXJCO3WZ5XFYR7\",\"301\"],\n[\"20160313152318\",\"http://figlief.com/\",\"SACFIK3GIYGPGNIUWGBXJCO3WZ5XFYR7\",\"-\"],\n[\"20161002110500\",\"http://figlief.com/\",\"SACFIK3GIYGPGNIUWGBXJCO3WZ5XFYR7\",\"-\"]]\n",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "status": 200,
+  "url": "https://web.archive.org/cdx/search/cdx?url=figlief.com&output=json&fl=timestamp,original,digest,statuscode&collapse=timestamp:6&limit=3000"
+}

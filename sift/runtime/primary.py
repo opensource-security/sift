@@ -60,6 +60,7 @@ def build_primary_findings_prompt(case: CommitCase, *, evidence_block: str = "",
         "history_before_commit.author_prior_commits_same_email",
         "history_before_commit.author_prior_commits_same_name",
         "history_before_commit.author_previous_commit_same_email_at",
+        "history_before_commit.author_identity_history.domain_provenance",
         "gharchive_context",
         "gharchive_context.repo_push_timing",
         "gharchive_context.target_push_event",
@@ -83,6 +84,28 @@ def build_primary_findings_prompt(case: CommitCase, *, evidence_block: str = "",
     lines.append("- Do not invent repo history or external context beyond the evidence shown.")
     lines.append("- Do not use a well-known maintainer committer as evidence that the patch author has long-standing repo history when author and committer differ.")
     lines.append("- Do not infer role changes, account takeover, or broader GitHub-ecosystem behavior unless the evidence shown actually supports that claim.")
+    lines.append(
+        "- `history_before_commit.author_identity_history.domain_provenance`, when present, IS "
+        "evidence that can support an account-takeover claim, and is the one exception to the rule "
+        "above. It reports whether the author's email domain changed hands since this identity "
+        "began using it: `status` CRITICAL or LIKELY with `role` \"supporting\" means the domain "
+        "was re-registered after the identity was already using it, which is the maintainer-domain "
+        "takeover vector. Treat it as supporting evidence, never as sole proof -- weigh it against "
+        "whether this patch touches anything worth taking an account over."
+    )
+    lines.append(
+        "- The same field with `role` \"counter\" is affirmative evidence AGAINST a takeover "
+        "reading: either the domain has been held continuously since before this identity first "
+        "used it, or the identity kept committing across the ownership gap. Cite it to close a weak "
+        "identity suspicion rather than leaving one open."
+    )
+    lines.append(
+        "- `role` \"unavailable\" means the check ran and could not answer (unreachable registry, "
+        "no published creation date); `role` \"declined\" means there was nothing to measure (a "
+        "noreply address or shared mailbox provider). Neither is a clean result, and an absent "
+        "`domain_provenance` field means the check did not run at all. Do not read any of these "
+        "three as evidence that the identity is sound."
+    )
     lines.append("- Read-only git tools may be available; use them when they would materially sharpen a finding or falsify a weak one.")
     lines.append(
         "- If the patch modifies code that implements resource limits, decompression guards, "

@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+from .case_builder import render_domain_provenance_lines
 from .pr_social import render_pr_social_history_lines
 from .types import CommitCase, Finding, VerificationMatrix, VerifierVote
 
@@ -245,6 +246,11 @@ def render_verifier_evidence(case: CommitCase) -> str:
             )
         if identity_flags:
             lines.append(f"- Identity flags: {', '.join(identity_flags)}")
+        # This renderer -- not `case_builder.render_agent_prompt` -- is what
+        # `primary.py` and every verifier variant actually read. Omitting the block
+        # here would leave the `domain_provenance` evidence ref pointing at a field
+        # the model never sees.
+        lines.extend(render_domain_provenance_lines(author_identity_history))
     author_surface_history = history.get("author_surface_history") or {}
     if author_surface_history:
         lines.append(f"- Surface history source: {author_surface_history.get('history_source') or '(unknown)'}")

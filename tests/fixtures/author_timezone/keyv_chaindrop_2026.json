@@ -1,0 +1,189 @@
+{
+  "fixture": "keyv_chaindrop_timezone_2026",
+  "question": "Does the authored-at timezone detector separate a maintainer-identity ATO from the maintainer's own commits -- and does the signal survive a multi-commit burst?",
+  "repo": "jaredwray/keyv",
+  "incident": "keyv_chaindrop_2026",
+  "disclosed": "2026-08-04",
+  "provenance": {
+    "sources": [
+      "Snyk",
+      "Wiz",
+      "Datadog Security Labs",
+      "SafeDep",
+      "Socket",
+      "Microsoft Security Blog",
+      "Aikido",
+      "StepSecurity"
+    ],
+    "notes": "Sixth Shai-Hulud wave, disclosed as ChainDrop. Push credential belonged to maintainer jaredwray; initial access unconfirmed. Payload is a `preinstall` hook plus committed .claude/settings.json and .vscode/tasks.json agent auto-run configs that cross-reference each other, so opening a checkout in an IDE or agent session executes it with no install.",
+    "recovered": "Objects were deleted from the default branch. Recovered 2026-08-08 by fetch-by-SHA; GitHub still serves them by full SHA. Mirrored to upstream-mirrors/keyv.git under refs/mirror/<sha>. Do not rely on upstream remaining willing to serve them.",
+    "corrects_public_reporting": "Public writeups state the keyv commits were authored as spoofed github-actions[bot]/claude. That holds for d8c850c7 only. The three payload commits carry the real maintainer identity Jared Wray <me@jaredwray.com>, unsigned, so keyv is a genuine known-author ATO rather than a spoofed-author case. Reporting also called the timezone undeterminable; the objects carry it."
+  },
+  "habitual_offset": {
+    "note": "Measured over jaredwray's full 2,231-commit authored history in the mirror, before the incident.",
+    "offsets_seen_minutes": {
+      "-420": 955,
+      "-480": 539,
+      "-360": 100,
+      "-600": 50,
+      "-300": 47,
+      "-240": 45,
+      "0": 3
+    },
+    "claim": "Exactly three +0000 commits exist in the entire history, and they are exactly the three payload commits."
+  },
+  "commits": {
+    "malicious_1": {
+      "sha": "ee2681a9b62f3637b0eb5133c36c864d3376cc5b",
+      "parent_sha": "0351177c44210a6821b000e6f4c3233f93492bec",
+      "author_name": "Jared Wray",
+      "author_email": "me@jaredwray.com",
+      "authored_at": "2026-08-04T09:02:37+00:00",
+      "committed_at": "2026-08-04T09:17:47+00:00",
+      "subject": "release: v6.0.0",
+      "expected": {
+        "current_timezone_offset_minutes": 0,
+        "current_timezone_prior_count": 0,
+        "timezone_first_seen": true,
+        "prior_mode_timezone_offset_minutes": -420,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": 420
+      }
+    },
+    "malicious_2": {
+      "sha": "f97eabcdd057105f1fce3f05d6c029dac3f2ac78",
+      "parent_sha": "6ff623e5c83db61616e1ed3f4b2cc3faf900a705",
+      "author_name": "Jared Wray",
+      "author_email": "me@jaredwray.com",
+      "authored_at": "2026-08-04T09:23:50+00:00",
+      "committed_at": "2026-08-04T09:23:50+00:00",
+      "subject": "keyv: remove preinstall test",
+      "expected": {
+        "current_timezone_offset_minutes": 0,
+        "current_timezone_prior_count": 1,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": -420,
+        "prior_mode_timezone_count": 19,
+        "timezone_drift_from_prior_mode_minutes": 420
+      }
+    },
+    "malicious_3": {
+      "sha": "1f79edd843e2a99ba1634874bf5e5b73cbefb74c",
+      "parent_sha": "0a180a9d5c1a61d184d3f2310a138fc05e4c4876",
+      "author_name": "Jared Wray",
+      "author_email": "me@jaredwray.com",
+      "authored_at": "2026-08-04T09:39:45+00:00",
+      "committed_at": "2026-08-04T09:51:12+00:00",
+      "subject": "keyv: add setup.mjs and Math_Symbol.js to all @keyv/* packages",
+      "expected": {
+        "current_timezone_offset_minutes": 0,
+        "current_timezone_prior_count": 2,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": -420,
+        "prior_mode_timezone_count": 18,
+        "timezone_drift_from_prior_mode_minutes": 420
+      }
+    },
+    "bot_config_commit": {
+      "sha": "d8c850c7800e514d582741a1f852b61122c31213",
+      "parent_sha": "90109616a94f6774c172c5f457b2195d5801d508",
+      "author_name": "github-actions[bot]",
+      "author_email": "41898282+github-actions[bot]@users.noreply.github.com",
+      "authored_at": "2026-08-04T09:04:30+00:00",
+      "committed_at": "2026-08-04T09:04:30+00:00",
+      "subject": "chore: update config",
+      "expected": {
+        "current_timezone_offset_minutes": 0,
+        "current_timezone_prior_count": 0,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": null,
+        "prior_mode_timezone_count": 0,
+        "timezone_drift_from_prior_mode_minutes": null
+      }
+    },
+    "benign_human_control": {
+      "sha": "90109616a94f6774c172c5f457b2195d5801d508",
+      "parent_sha": "fc723000dda668d15783309e86f70dfeaa28506d",
+      "author_name": "Jared Wray",
+      "author_email": "me@jaredwray.com",
+      "authored_at": "2026-08-03T16:47:37-07:00",
+      "committed_at": "2026-08-03T16:47:37-07:00",
+      "subject": "etcd - fix: Use Keyv default serializer for value envelope (#2041)",
+      "expected": {
+        "current_timezone_offset_minutes": -420,
+        "current_timezone_prior_count": 20,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": -420,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": 0
+      }
+    },
+    "benign_bot_control": {
+      "sha": "0351177c44210a6821b000e6f4c3233f93492bec",
+      "parent_sha": "05c320eadfb7c2ff2da40edfc00029f195a7579b",
+      "author_name": "github-actions[bot]",
+      "author_email": "41898282+github-actions[bot]@users.noreply.github.com",
+      "authored_at": "2026-08-04T09:14:56+00:00",
+      "committed_at": "2026-08-04T09:14:56+00:00",
+      "subject": "chore: update config",
+      "expected": {
+        "current_timezone_offset_minutes": 0,
+        "current_timezone_prior_count": 3,
+        "timezone_first_seen": false,
+        "prior_mode_timezone_offset_minutes": 0,
+        "prior_mode_timezone_count": 3,
+        "timezone_drift_from_prior_mode_minutes": 0
+      }
+    }
+  },
+  "roles": {
+    "malicious_1": "First payload commit. Maximum signal: this offset has never been seen for this identity.",
+    "malicious_2": "Second payload commit. first_seen has already flipped False -- poisoned by malicious_1.",
+    "malicious_3": "Third payload commit. Mode support decayed 20 -> 18.",
+    "bot_config_commit": "Agent-config commit, genuinely authored by github-actions[bot]. No baseline exists for that identity, so the detector must report an unknown mode rather than an anomaly.",
+    "benign_human_control": "Last clean jaredwray commit before the attack, 2h15m earlier. Matched in-repo negative.",
+    "benign_bot_control": "Legitimate release-automation commit at +0000. The load-bearing false-positive control: same offset as the attack, but no drift, because the bot identity's own baseline is +0000."
+  },
+  "pinned_behavior": {
+    "burst_decay": {
+      "note": "Per-commit evaluation of a burst is NOT independent -- the detector's own history window ingests the attacker's earlier commits.",
+      "prior_count_by_position": [
+        0,
+        1,
+        2
+      ],
+      "mode_support_by_position": [
+        20,
+        19,
+        18
+      ],
+      "first_seen_by_position": [
+        true,
+        false,
+        false
+      ],
+      "drift_is_stable_minutes": 420
+    },
+    "window_sweep": {
+      "note": "prior_count and mode measured at max_author_history_commits in (5,10,20,50); the drift signal is window-insensitive here, but prior_count decay is not.",
+      "windows": [
+        5,
+        10,
+        20,
+        50
+      ],
+      "mode_holds_at_every_window_minutes": -420
+    },
+    "inversion_threshold": {
+      "note": "Latent hazard, NOT realized by this incident. The mode flips to the attacker's offset once malicious commits exceed half the window, at which point drift collapses to 0 and the detector inverts. With the default window of 20 that needs 11 payload commits; keyv had 3. Pinned so that shrinking the window or meeting a longer burst fails loudly.",
+      "default_window": 20,
+      "malicious_commits_in_incident": 3,
+      "commits_needed_to_invert_at_default_window": 11
+    }
+  },
+  "why_this_fixture": [
+    "First real ground truth for the authored-at timezone detector: two identities, five years of habitual offsets, and an attack that is separated perfectly.",
+    "The +0000 offset is not itself the signal -- legitimate release automation in this same repo commits at +0000. The signal is drift against a per-identity baseline, and the benign_bot_control pins that distinction.",
+    "Documents that burst position changes the score, which any per-commit evaluation harness must account for or it will understate the detector and hide the inversion."
+  ]
+}

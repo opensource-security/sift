@@ -37,9 +37,26 @@ Homepage = "https://github.com/opensource-security/sift"
 Repository = "https://github.com/opensource-security/sift"
 Issues = "https://github.com/opensource-security/sift/issues"
 
+[project.optional-dependencies]
+# Domain-provenance checks only. The core commit-triage pipeline must stay
+# installable and runnable without these; see docs/domain-provenance-plan.md.
+provenance = [
+    "httpx>=0.27",
+    "tldextract>=5.1",
+    "idna>=3.6",
+    "python-dateutil>=2.9",
+    "dnspython>=2.6",
+]
+# GPG UID parsing deliberately shells out to `gpg --list-packets` rather than
+# taking a library dependency. PGPy 0.6.0 (the only maintained option) imports
+# `imghdr`, removed from the stdlib in Python 3.13 by PEP 594, so it cannot be
+# imported at all on 3.13+. `gpg` is present on GitHub runners and gives more:
+# a per-UID binding-signature date instead of one key-wide creation date.
+
 [project.scripts]
 sift-commit = "sift.cli.analyze_commit:main"
 sift-pr = "sift.cli.analyze_pr:main"
+sift-domain = "sift.cli.domain_provenance:main"
 
 [build-system]
 requires = ["hatchling"]

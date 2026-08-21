@@ -45,6 +45,16 @@ inputs:
     description: "Days to retain uploaded artifacts"
     required: false
     default: "30"
+  domain_provenance:
+    description: >
+      Contributor email-domain provenance: off, redacted, or detail. Detects whether
+      the PR author's email domain changed hands since that identity began using it
+      (the npm node-ipc / PyPI ctx takeover vector). Installs the sift[provenance]
+      extra and makes outbound RDAP/CT requests, so it is off by default.
+      "redacted" withholds the domain from all output; "detail" includes it, which on
+      a public repository means publishing it — a job summary is not a private channel.
+    required: false
+    default: "off"
 
 outputs:
   artifact_path:
@@ -73,7 +83,15 @@ runs:
 
     - name: Install sift
       shell: bash
-      run: pip install --quiet "${{ github.action_path }}/.."
+      run: |
+        # The provenance extra must be requested explicitly: without it the
+        # domain-provenance evidence hook degrades to "unavailable" and the check
+        # silently no-ops in production while passing locally.
+        if [ "${{ inputs.domain_provenance }}" != "off" ]; then
+          pip install --quiet "${{ github.action_path }}/..[provenance]"
+        else
+          pip install --quiet "${{ github.action_path }}/.."
+        fi
 
     - name: Fetch PR head objects (without checking out PR code)
       shell: bash
@@ -95,6 +113,10 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.api_key }}
         OPENAI_API_KEY: ${{ inputs.api_key }}
         GITHUB_TOKEN: ${{ github.token }}
+        # Attaches domain-provenance evidence to the case so the triage model can
+        # weigh it against what the patch touches, rather than it being reported
+        # as a standalone finding.
+        SIFT_DOMAIN_PROVENANCE: ${{ inputs.domain_provenance != 'off' && '1' || '0' }}
       run: |
         mkdir -p artifacts
         PROFILE_ARG=""
@@ -144,6 +166,39 @@ runs:
         cat artifacts/sift_pr_summary.md >> "$GITHUB_STEP_SUMMARY"
         echo "summary_path=artifacts/sift_pr_summary.md" >> "$GITHUB_OUTPUT"
 
+    - name: Contributor domain provenance
+      if: ${{ inputs.domain_provenance != 'off' }}
+      shell: bash
+      continue-on-error: true
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        # A standalone report for the maintainer, separate from the triage
+        # evidence above. Redacted by default: on a public repository the job
+        # summary and uploaded artifacts are both world-readable, so there is no
+        # maintainer-only channel here, and naming a contributor's expiring
+        # personal domain in public output is a targeting notice.
+        PUBLIC_FLAG="--public"
+        if [ "${{ inputs.domain_provenance }}" = "detail" ]; then
+          PUBLIC_FLAG=""
+        fi
+        # Exit 1 means "anomaly found", which is information, not a failure.
+        python3 -m sift.cli.domain_provenance \
+          --event-path "$GITHUB_EVENT_PATH" \
+          --repo-path "$GITHUB_WORKSPACE" \
+          $PUBLIC_FLAG \
+          > artifacts/sift_domain_provenance.md || true
+        # The JSON carries unredacted domains, so it is only produced in detail
+        # mode. Uploaded artifacts are world-readable on a public repository.
+        if [ "${{ inputs.domain_provenance }}" = "detail" ]; then
+          python3 -m sift.cli.domain_provenance \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --repo-path "$GITHUB_WORKSPACE" \
+            --json \
+            > artifacts/sift_domain_provenance.json || true
+        fi
+        cat artifacts/sift_domain_provenance.md >> "$GITHUB_STEP_SUMMARY"
+
     - name: Post check run
       shell: bash
       env:
@@ -169,3 +224,6 @@ runs:
           artifacts/sift_pr_analysis.json
           artifacts/sift_pr_summary.md
           artifacts/sift_pr_check.json
+          artifacts/sift_domain_provenance.md
+          artifacts/sift_domain_provenance.json
+        if-no-files-found: ignore
