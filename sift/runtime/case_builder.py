@@ -8,6 +8,7 @@ from pathlib import Path
 from statistics import median, pstdev
 from typing import Any
 
+from .email_domain import build_email_domain_context, render_email_domain_evidence
 from .file_ownership import query_sensitive_path_owners
 from .pr_social import render_pr_social_history_lines
 from .sensitive_surfaces import (
@@ -2477,6 +2478,7 @@ def build_replay_case(
     temporal_mode: str,
     gharchive_event_lookup: GHArchiveEventLookup,
     gharchive_events_by_repo: GHArchiveEventsByRepo,
+    email_domain_intel: dict[str, Any] | None = None,
 ) -> CommitCase:
     repo_path = mirror_path_for(truth.repo, clone_dir)
     repo_exists = repo_path.exists()
@@ -2597,7 +2599,15 @@ def build_replay_case(
         "history_before_commit": history,
         "gharchive_context": gharchive_context,
     }
+    if email_domain_intel is not None:
+        email_domain_context = build_email_domain_context(
+            commit_payload, history, email_domain_intel, temporal_mode
+        )
+        case["email_domain_context"] = email_domain_context
+        case["feature_availability"]["email_domain_intel"] = True
     case["agent_prompt"] = render_agent_prompt(case, gharchive_mode=gharchive_mode, temporal_mode=temporal_mode)
+    if email_domain_intel is not None:
+        case["agent_prompt"] += render_email_domain_evidence(email_domain_context)
     return case
 
 
@@ -2618,6 +2628,7 @@ def build_realtime_case(
     pr_social_history: dict[str, Any] | None = None,
     gharchive_mode: str = "omit",
     full_history_repo_path: Path | None = None,
+    email_domain_intel: dict[str, Any] | None = None,
 ) -> CommitCase:
     repo_path = Path(repo_path)
     if not repo_path.exists():
@@ -2722,5 +2733,13 @@ def build_realtime_case(
             "source": "realtime_observation",
         },
     }
+    if email_domain_intel is not None:
+        email_domain_context = build_email_domain_context(
+            commit_payload, history, email_domain_intel, "realtime"
+        )
+        case["email_domain_context"] = email_domain_context
+        case["feature_availability"]["email_domain_intel"] = True
     case["agent_prompt"] = render_agent_prompt(case, gharchive_mode=gharchive_mode, temporal_mode="realtime")
+    if email_domain_intel is not None:
+        case["agent_prompt"] += render_email_domain_evidence(email_domain_context)
     return case

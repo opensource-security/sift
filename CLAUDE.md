@@ -38,6 +38,7 @@ live model are opt-in behind `SIFT_FIXTURE_LIVE=1`.
 - `sift/runtime/providers.py` — LLM provider implementations (Anthropic, Ollama) with rate-limit retry logic. Default model: `claude-opus-4-6`.
 - `sift/runtime/repo_tools.py` — read-only git tools exposed to Claude via tool use (git_show_commit, git_show_file, git_log)
 - `sift/runtime/sensitive_surfaces.py` — pattern-based path classification (ci_workflow, build_config, dependency_manifest, release_publish)
+- `sift/runtime/email_domain.py` — offline email-domain enrichment (forged-bot domain mismatch, domain age, expired-domain resurrection); consumes a DNS/RDAP snapshot passed to the case builders as `email_domain_intel`, never does live lookups
 - `sift/runtime/file_ownership.py` — git log analysis for ownership concentration metrics
 
 ### CLI Entry Points (defined in pyproject.toml)

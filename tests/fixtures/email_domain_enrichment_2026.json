@@ -1,0 +1,52 @@
+{
+  "fixture": "email_domain_enrichment_2026",
+  "pinned_from": "megalodon_2026 incident identities + RDAP/DNS facts verified live 2026-08-21 (stars follow_ups/committer_email_domain_prior_art.md section 3)",
+  "anchor_timestamp_utc": "2026-05-18T12:50:25Z",
+  "identities": {
+    "megalodon_tiledesk": {"author_name": "build-bot", "author_email": "build-system@noreply.dev"},
+    "megalodon_wiznet": {"author_name": "build-bot", "author_email": "ci-bot@automated.dev"},
+    "bufferzone": {"author_name": "BufferZoneCorp", "author_email": "BufferZoneCorp@users.noreply.github.com"},
+    "real_dependabot": {"author_name": "dependabot[bot]", "author_email": "49699333+dependabot[bot]@users.noreply.github.com"},
+    "xz_jia_tan": {"author_name": "Jia Tan", "author_email": "jiat0218@gmail.com"},
+    "benign_human_custom": {"author_name": "Giovanni Troisi", "author_email": "giovanni@tiledesk.com"}
+  },
+  "snapshot": {
+    "snapshot_version": "email_domain_intel_v1",
+    "observed_at": "2026-08-21T09:48:42Z",
+    "domains": {
+      "noreply.dev": {
+        "classification": "custom",
+        "dns": {"ns_present": true, "mx_present": false, "a_present": false},
+        "rdap": {"registered": true, "registered_at": "2019-02-28T20:43:53.697Z", "expires_at": "2027-02-28T20:43:53.697Z"}
+      },
+      "automated.dev": {
+        "classification": "custom",
+        "dns": {"ns_present": true, "mx_present": true, "a_present": true},
+        "rdap": {"registered": true, "registered_at": "2022-12-12T17:07:07.963Z", "expires_at": "2026-12-12T17:07:07.963Z"}
+      },
+      "tiledesk.com": {
+        "classification": "custom",
+        "dns": {"ns_present": true, "mx_present": true, "a_present": true},
+        "rdap": {"registered": true, "registered_at": "2018-02-23T12:34:34Z", "expires_at": "2027-02-23T12:34:34Z"}
+      },
+      "users.noreply.github.com": {"classification": "github_infra", "dns": null, "rdap": null},
+      "gmail.com": {"classification": "freemail", "dns": null, "rdap": null}
+    }
+  },
+  "synthetic_resurrection": {
+    "note": "ctx-class (PyPI 2022): maintainer custom domain expired and was re-registered during their tenure; RDAP creation date resets on re-registration, so registered_at > author_first_seen is the deterministic tell. Synthetic because the ctx incident left no git-commit trail.",
+    "author_name": "Old Maintainer",
+    "author_email": "dev@resurrected.example",
+    "author_first_seen_same_email_at": "2021-03-01T00:00:00Z",
+    "domain_entry": {
+      "classification": "custom",
+      "dns": {"ns_present": true, "mx_present": true, "a_present": true},
+      "rdap": {"registered": true, "registered_at": "2026-06-01T00:00:00Z", "expires_at": "2027-06-01T00:00:00Z"}
+    }
+  },
+  "pinned_behavior": {
+    "noreply_dev_age_days_at_anchor": 2635.7,
+    "forged_bot_flag": "bot_identity_on_nonplatform_domain is true for both megalodon identities, false for every genuine platform-bot, freemail, and human identity",
+    "temporal_gate": "mx_present/ns_present are exposed only in retrospective mode; registration dates in both modes"
+  }
+}
