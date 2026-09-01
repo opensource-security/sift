@@ -1,0 +1,110 @@
+{
+  "fixture": "mevn_cli_backdated_graft_2026",
+  "repo": "madlabsinc/mevn-cli",
+  "incident": "UNK_DeadDrop / deepfake_guard loader, buildwithknexus[.]xyz",
+  "captured_at": "2026-09-01",
+  "default_branch_ref": "refs/heads/develop",
+  "notes": [
+    "The account scriptonist pushed 2026-08-20 09:59-11:23Z. Both branches were",
+    "given the same treatment: graft the loader onto a genuine release commit,",
+    "copying that commit's author timestamp, committer timestamp and subject line",
+    "verbatim. On master the anchor is d6f8eb1 (1.8.1, 2020-08-23); on develop it is",
+    "d6c30b2 (a docs commit, 2026-07-23). Neither anchor carries the loader.",
+    "The forged offset is +0530 -- the maintainer's own -- so timezone drift is 0."
+  ],
+  "commits": {
+    "malicious_master_hook": {
+      "sha": "3a30d0d7ca9f877fb1be33929a8a34f887fe5702",
+      "parent_sha": "d6f8eb1900f8f40c6009796774d3dfe9146bfab5",
+      "observed_ref": "refs/heads/master",
+      "role": "adds scripts/preinstall.js and the package.json preinstall hook",
+      "carries_loader": true,
+      "clones_parent_timestamp": true,
+      "expected_timezone": {
+        "current_timezone_offset_minutes": 330,
+        "prior_mode_timezone_offset_minutes": 330,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": 0,
+        "timezone_first_seen": false,
+        "current_timezone_prior_count": 20
+      },
+      "expected_baseline": {
+        "baseline_scope": "merge_base_with_default_branch",
+        "baseline_root_sha": "d6f8eb1900f8f40c6009796774d3dfe9146bfab5",
+        "observed_ref_commits_ahead_of_baseline": 1,
+        "baseline_is_contributor_controlled": false
+      },
+      "expected_identity_flags": []
+    },
+    "malicious_master_refine": {
+      "sha": "ceb455875c320a764fa6ac102674f161509d3394",
+      "parent_sha": "3a30d0d7ca9f877fb1be33929a8a34f887fe5702",
+      "observed_ref": "refs/heads/master",
+      "role": "refines the loader (adds the win32 check_w branch)",
+      "carries_loader": true,
+      "clones_parent_timestamp": true,
+      "expected_timezone": {
+        "current_timezone_offset_minutes": 330,
+        "prior_mode_timezone_offset_minutes": 330,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": 0,
+        "timezone_first_seen": false,
+        "current_timezone_prior_count": 20
+      },
+      "expected_baseline": {
+        "baseline_scope": "merge_base_with_default_branch",
+        "baseline_root_sha": "d6f8eb1900f8f40c6009796774d3dfe9146bfab5",
+        "observed_ref_commits_ahead_of_baseline": 2,
+        "baseline_is_contributor_controlled": false
+      },
+      "expected_identity_flags": []
+    },
+    "malicious_develop_hook": {
+      "sha": "eabf4d93f660e5a837c80cc8a73d554db2ecf3ec",
+      "parent_sha": "d6c30b223c7db4d275faad6e82b4d87c16601dae",
+      "observed_ref": "refs/heads/develop",
+      "role": "the same graft on the default branch",
+      "carries_loader": true,
+      "clones_parent_timestamp": true
+    },
+    "malicious_develop_head": {
+      "sha": "f8830218b5d70d068cca19a45df261a8cf19f30d",
+      "parent_sha": "eabf4d93f660e5a837c80cc8a73d554db2ecf3ec",
+      "observed_ref": "refs/heads/develop",
+      "role": "develop branch head as captured 2026-09-01",
+      "carries_loader": true,
+      "clones_parent_timestamp": true
+    },
+    "benign_master_anchor": {
+      "sha": "d6f8eb1900f8f40c6009796774d3dfe9146bfab5",
+      "parent_sha": "2e118708d646deb0f5aa76225a7426a674300f95",
+      "observed_ref": "refs/heads/develop",
+      "role": "the genuine 2020 1.8.1 release commit the graft was hung from",
+      "carries_loader": false,
+      "clones_parent_timestamp": false
+    },
+    "benign_develop_anchor": {
+      "sha": "d6c30b223c7db4d275faad6e82b4d87c16601dae",
+      "parent_sha": "0b6828f2cf88f2ef19ed7dcd5d21145b2a3cdb14",
+      "observed_ref": "refs/heads/develop",
+      "role": "the genuine docs commit the develop-side graft was hung from",
+      "carries_loader": false,
+      "clones_parent_timestamp": false
+    }
+  },
+  "pinned_behavior": {
+    "parent_timestamp_clone_scan": {
+      "ref": "refs/remotes/gh/develop",
+      "commits_compared": 769,
+      "matches": 2,
+      "matches_are_all_malicious": true,
+      "comment": "Scanning the whole default branch for commits whose author time, committer time and subject all equal their parent's yields exactly the two develop-side graft commits. No genuine commit in 769 trips it."
+    },
+    "timezone_detector_is_blind": {
+      "malicious_commits_checked": 4,
+      "drift_nonzero_count": 0,
+      "first_seen_true_count": 0,
+      "comment": "The attacker reused the maintainer's own +0530 offset, so every payload commit agrees with the baseline. This is the opposite of keyv and Injective, where the attacker's real offset leaked."
+    }
+  }
+}

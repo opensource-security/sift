@@ -1,0 +1,113 @@
+{
+  "fixture": "hugo_paper_owner_ato_2026",
+  "repo": "nanxiaobei/hugo-paper",
+  "incident": "UNK_DeadDrop / deepfake_guard loader, buildwithknexus[.]xyz",
+  "captured_at": "2026-09-01",
+  "default_branch_ref": "refs/heads/main",
+  "notes": [
+    "Owner-account compromise, not a fork PR. The push replaced the signed merge of",
+    "PR #267 with an unsigned twin carrying scripts/preinstall.js -- byte-identical",
+    "to the mevn-cli loader (sha256 61412c99..af100), which is what ties the two",
+    "repos to one operator. The author timestamp is the maintainer's habitual +0800,",
+    "so timezone drift is 0 here too.",
+    "Unlike mevn-cli the timestamp is NOT cloned from the parent, so the",
+    "parent-timestamp-clone signal is silent on this repo. What separates the twin",
+    "from the commit it replaced is the absent GPG signature -- which sift does not",
+    "observe at all.",
+    "c26b0568 was the branch head when hutning first recorded the incident on",
+    "2026-08-29; a68d2c9b replaced it in a later rewrite. Both carry the loader and",
+    "both report the same author timestamp, so the rewrite preserved the backdate",
+    "rather than introducing it."
+  ],
+  "commits": {
+    "malicious_head": {
+      "sha": "a68d2c9b2ad9d857b09dcb30a578ac1de6487061",
+      "parent_sha": "7c6a6c57322066fb215e0583c97f0ce480e5b09e",
+      "observed_ref": "refs/heads/main",
+      "role": "unsigned twin of the PR #267 merge, adds scripts/preinstall.js",
+      "carries_loader": true,
+      "clones_parent_timestamp": false,
+      "gpgsig_header_count": 0,
+      "expected_timezone": {
+        "current_timezone_offset_minutes": 480,
+        "prior_mode_timezone_offset_minutes": 480,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": 0,
+        "timezone_first_seen": false,
+        "current_timezone_prior_count": 20
+      },
+      "expected_baseline": {
+        "baseline_scope": "default_branch",
+        "baseline_root_sha": "7c6a6c57322066fb215e0583c97f0ce480e5b09e",
+        "observed_ref_commits_ahead_of_baseline": 0,
+        "baseline_is_contributor_controlled": false
+      },
+      "expected_identity_flags": [
+        "author_email_seen_with_other_names",
+        "author_committer_identity_mismatch",
+        "committer_email_is_noreply"
+      ]
+    },
+    "malicious_prior_head": {
+      "sha": "c26b0568c89264413375c3c58f36ac2a9a779d9e",
+      "parent_sha": "7c6a6c57322066fb215e0583c97f0ce480e5b09e",
+      "observed_ref": "refs/heads/main",
+      "role": "the branch head recorded 2026-08-29, before the rewrite",
+      "carries_loader": true,
+      "clones_parent_timestamp": false,
+      "gpgsig_header_count": 0,
+      "expected_timezone": {
+        "current_timezone_offset_minutes": 480,
+        "prior_mode_timezone_offset_minutes": 480,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": 0,
+        "timezone_first_seen": false,
+        "current_timezone_prior_count": 20
+      },
+      "expected_identity_flags": [
+        "author_email_seen_with_other_names",
+        "author_committer_identity_mismatch",
+        "committer_email_is_noreply"
+      ]
+    },
+    "benign_signed_parent": {
+      "sha": "7c6a6c57322066fb215e0583c97f0ce480e5b09e",
+      "parent_sha": "ea99e0f67ff688eb23e1fbbf01c2e6a8788f3a71",
+      "observed_ref": "refs/heads/main",
+      "role": "the maintainer's own signed merge of PR #266, one commit earlier",
+      "carries_loader": false,
+      "clones_parent_timestamp": false,
+      "gpgsig_header_count": 1,
+      "expected_timezone": {
+        "current_timezone_offset_minutes": 480,
+        "prior_mode_timezone_offset_minutes": 480,
+        "prior_mode_timezone_count": 20,
+        "timezone_drift_from_prior_mode_minutes": 0,
+        "timezone_first_seen": false,
+        "current_timezone_prior_count": 20
+      },
+      "expected_identity_flags": [
+        "author_email_seen_with_other_names",
+        "author_committer_identity_mismatch",
+        "committer_email_is_noreply"
+      ]
+    }
+  },
+  "pinned_behavior": {
+    "identity_flags_do_not_discriminate": {
+      "comment": "The malicious twin and the legitimate merge one commit earlier raise the identical three identity flags, because both are GitHub-UI merges. Any reading that treats these flags as detection of this incident is reading noise."
+    },
+    "signature_is_the_discriminator": {
+      "malicious_gpgsig_headers": 0,
+      "benign_gpgsig_headers": 1,
+      "observed_by_sift": false,
+      "comment": "Signature state separates the twin from what it replaced, is deterministic, and needs no network or key material to read as present/absent. sift's runtime layer does not look at it."
+    },
+    "parent_timestamp_clone_scan": {
+      "ref": "refs/remotes/gh/main",
+      "commits_compared": 612,
+      "matches": 0,
+      "comment": "The mevn-cli signal is silent here: this attacker did not clone the parent timestamp. The two repos need different signals despite one operator."
+    }
+  }
+}
