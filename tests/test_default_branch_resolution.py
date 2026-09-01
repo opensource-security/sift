@@ -21,6 +21,15 @@ model sees author baselines at all -- and it decides wrongly in both directions:
 The case that deserved a caveat is trusted and the ordinary case is blanked. Both
 failures are silent: no error, no caveat, just a thinner prompt.
 
+The second half of this file covers what the default branch is *for*: choosing the
+revision an author baseline is computed from. Off the default branch that baseline
+cannot be the parent chain, because a branch can be force-pushed to any shape by
+the contributor being assessed -- which is precisely how a backdated graft is
+delivered. It is taken at the merge-base with the default branch instead, the last
+point the two histories agreed. When no default can be established the branch-local
+baseline is still offered, but flagged as possibly contributor-authored rather than
+dropped: an empty block removed real evidence from every prompt that hit it.
+
 These tests build small repos with `git`, so they are deterministic, offline, and
 free. No fixture objects, no network, no API key.
 
@@ -41,6 +50,7 @@ sys.path.insert(0, str(ROOT))
 
 from sift.runtime.case_builder import (  # noqa: E402
     branch_ref_exists,
+    resolve_author_baseline_revision,
     resolve_default_branch_ref,
 )
 
@@ -174,6 +184,98 @@ def test_branch_ref_exists_accepts_both_layouts() -> None:
     print("  ok  branch existence recognized in both clone and mirror layouts")
 
 
+def test_baseline_off_default_branch_is_taken_at_merge_base() -> None:
+    """D3: a branch the contributor controls must not supply its own baseline.
+
+    A force-pushed branch can be given any shape, which is how a backdated graft
+    is delivered. The baseline is therefore taken at the merge-base with the
+    default branch -- the last point the two histories agreed -- and the commits
+    the branch adds beyond it are counted rather than absorbed."""
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        src = make_source_repo(tmp, ("main",), "main")
+        merge_base = git(src, "rev-parse", "HEAD")
+        git(src, "checkout", "-q", "-b", "side")
+        for n in range(2):
+            (src / f"side{n}").write_text("x\n")
+            git(src, "add", f"side{n}")
+            git(src, "commit", "-qm", f"side {n}")
+        side_head = git(src, "rev-parse", "HEAD")
+        parent = git(src, "rev-parse", "HEAD~1")
+
+        revision, scope, ahead = resolve_author_baseline_revision(
+            src,
+            parent_revision=parent,
+            default_branch_ref="refs/heads/main",
+            on_default_branch=False,
+        )
+        assert scope == "merge_base_with_default_branch", f"got scope {scope!r}"
+        assert revision == merge_base, (
+            "REGRESSION: the baseline is no longer the merge-base with the default "
+            "branch, so a force-pushed branch supplies the history it is judged against"
+        )
+        assert ahead == 2, f"expected 2 commits beyond the baseline, got {ahead!r}"
+        assert side_head != merge_base
+    print("  ok  off-default baseline taken at merge-base, branch commits counted")
+
+
+def test_baseline_on_default_branch_uses_parent_chain() -> None:
+    """On the default branch the parent chain is the repository's own history."""
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        src = make_source_repo(tmp, ("main",), "main")
+        (src / "second").write_text("x\n")
+        git(src, "add", "second")
+        git(src, "commit", "-qm", "second")
+        parent = git(src, "rev-parse", "HEAD~1")
+
+        revision, scope, ahead = resolve_author_baseline_revision(
+            src,
+            parent_revision=parent,
+            default_branch_ref="refs/heads/main",
+            on_default_branch=True,
+        )
+        assert (revision, scope, ahead) == (parent, "default_branch", 0)
+    print("  ok  on-default baseline uses the parent chain unchanged")
+
+
+def test_unknown_default_degrades_and_is_flagged() -> None:
+    """D2: an unestablished default must degrade with a warning, not vanish.
+
+    Returning {} silently removed every author baseline from the prompt. The
+    branch-local baseline is still worth showing, provided the caller is told it
+    may have been authored by the contributor under assessment."""
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        src = make_source_repo(tmp, ("main",), "main")
+        (src / "second").write_text("x\n")
+        git(src, "add", "second")
+        git(src, "commit", "-qm", "second")
+        parent = git(src, "rev-parse", "HEAD~1")
+
+        revision, scope, ahead = resolve_author_baseline_revision(
+            src,
+            parent_revision=parent,
+            default_branch_ref="",
+            on_default_branch=False,
+        )
+        assert scope == "observed_ref_local", f"got scope {scope!r}"
+        assert revision == parent, "the branch-local parent should still be offered"
+        assert ahead is None, "commits-ahead is unknowable without a baseline"
+    print("  ok  unknown default degrades to a flagged branch-local baseline")
+
+
+def test_no_parent_history_is_reported_not_guessed() -> None:
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        src = make_source_repo(tmp, ("main",), "main")
+        assert resolve_author_baseline_revision(
+            src, parent_revision="", default_branch_ref="refs/heads/main",
+            on_default_branch=True,
+        ) == ("", "no_parent_history", None)
+    print("  ok  a root commit reports absent parent history")
+
+
 def main() -> int:
     tests = [
         test_phantom_head_is_not_returned,
@@ -181,9 +283,14 @@ def main() -> int:
         test_non_origin_remote_head_is_honored,
         test_working_clone_still_resolves,
         test_branch_ref_exists_accepts_both_layouts,
+        test_baseline_off_default_branch_is_taken_at_merge_base,
+        test_baseline_on_default_branch_uses_parent_chain,
+        test_unknown_default_degrades_and_is_flagged,
+        test_no_parent_history_is_reported_not_guessed,
     ]
     failed = 0
-    print("default_branch_resolution: is the default branch established, or invented?\n")
+    print("default_branch_resolution: is the default branch established, or invented, "
+          "and what baseline follows from it?\n")
     for test in tests:
         try:
             test()

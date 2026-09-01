@@ -817,6 +817,69 @@ def _head_ref_to_branch_ref(raw_ref: str) -> str:
     return normalize_git_ref(text)
 
 
+def resolve_branch_revision(repo_path: Path, normalized_ref: str) -> str:
+    """A revision git can actually resolve for a normalized refs/heads/ name.
+
+    Mirrors hold branches under refs/remotes/<remote>/, so the normalized name
+    is frequently not resolvable as written.
+    """
+    ref = (normalized_ref or "").strip()
+    if not ref:
+        return ""
+    if run_git(repo_path, "rev-parse", "--verify", "--quiet", ref)[0] == 0:
+        return ref
+    if not ref.startswith("refs/heads/"):
+        return ""
+    branch = ref[len("refs/heads/") :]
+    _, out, _ = run_git(repo_path, "for-each-ref", "--format=%(refname)", f"refs/remotes/*/{branch}")
+    for line in out.splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def resolve_author_baseline_revision(
+    repo_path: Path,
+    *,
+    parent_revision: str,
+    default_branch_ref: str,
+    on_default_branch: bool,
+) -> tuple[str, str, int | None]:
+    """Pick the revision an author baseline is computed from.
+
+    Returns (revision, scope, commits_ahead_of_baseline).
+
+    The baseline must not be something the contributor being assessed can stuff.
+    On the default branch the parent chain is the repository's own history, so it
+    is used directly. Off it, the parent chain may be entirely authored by the
+    contributor -- a branch can be force-pushed to any shape, which is exactly how
+    a backdated graft is delivered -- so the baseline is taken at the merge-base
+    with the default branch: the last point the two histories agreed, which the
+    branch cannot alter.
+
+    When no merge-base can be established the branch-local parent is returned and
+    labelled `observed_ref_local`, so the caller can mark the baseline as
+    contributor-controlled rather than silently trusting or discarding it.
+    """
+    if not parent_revision:
+        return "", "no_parent_history", None
+    if on_default_branch:
+        return parent_revision, "default_branch", 0
+
+    default_revision = resolve_branch_revision(repo_path, default_branch_ref)
+    if default_revision:
+        code, out, _ = run_git(repo_path, "merge-base", parent_revision, default_revision)
+        merge_base = out.strip()
+        if code == 0 and merge_base:
+            _, count_out, _ = run_git(
+                repo_path, "rev-list", "--count", f"{merge_base}..{parent_revision}"
+            )
+            ahead_text = count_out.strip()
+            ahead = int(ahead_text) + 1 if ahead_text.isdigit() else None
+            return merge_base, "merge_base_with_default_branch", ahead
+    return parent_revision, "observed_ref_local", None
+
+
 def resolve_default_branch_ref(repo_path: Path) -> str:
     """Best-effort default branch, or "" when it cannot be established.
 
@@ -1269,8 +1332,10 @@ def summarize_author_temporal_complexity_history(
 ) -> dict[str, Any]:
     observed_ref_normalized = normalize_git_ref(observed_ref)
     default_branch_ref_normalized = normalize_git_ref(default_branch_ref)
-    if not default_branch_ref_normalized or observed_ref_normalized != default_branch_ref_normalized:
-        return {}
+    on_default_branch = bool(
+        default_branch_ref_normalized
+        and observed_ref_normalized == default_branch_ref_normalized
+    )
 
     author_email = str(commit_payload.get("author_email", "")).strip()
     author_name = str(commit_payload.get("author_name", "")).strip()
@@ -1284,7 +1349,14 @@ def summarize_author_temporal_complexity_history(
         author_pattern = ""
         identity_basis = "none"
 
-    baseline_revision = history_roots[0] if history_roots else ""
+    parent_revision = history_roots[0] if history_roots else ""
+    baseline_revision, baseline_scope, commits_ahead = resolve_author_baseline_revision(
+        repo_path,
+        parent_revision=parent_revision,
+        default_branch_ref=default_branch_ref_normalized,
+        on_default_branch=on_default_branch,
+    )
+    baseline_is_contributor_controlled = baseline_scope == "observed_ref_local"
     raw_author_commits = (
         load_author_commit_temporal_summaries(
             repo_path,
@@ -1399,6 +1471,14 @@ def summarize_author_temporal_complexity_history(
         history_caveats.append("shallow_clone_visible_history_only")
     if truncated:
         history_caveats.append("bounded_author_history_window")
+    if not on_default_branch:
+        history_caveats.append("observed_ref_differs_from_default_branch")
+    if baseline_scope == "merge_base_with_default_branch":
+        history_caveats.append("baseline_taken_at_merge_base_with_default_branch")
+    if baseline_is_contributor_controlled:
+        history_caveats.append("baseline_is_observed_ref_local_and_may_be_contributor_controlled")
+    if not default_branch_ref_normalized:
+        history_caveats.append("default_branch_could_not_be_established")
 
     current_timezone_prior_count = (
         timezone_counts.get(current_timezone_offset, 0)
@@ -1414,7 +1494,12 @@ def summarize_author_temporal_complexity_history(
     return {
         "history_source": "default_branch_first_parent_visible_history_v1",
         "baseline_ref": default_branch_ref_normalized,
+        "observed_ref": observed_ref_normalized,
+        "observed_ref_is_default_branch": on_default_branch,
         "baseline_root_sha": baseline_revision,
+        "baseline_scope": baseline_scope,
+        "baseline_is_contributor_controlled": baseline_is_contributor_controlled,
+        "observed_ref_commits_ahead_of_baseline": commits_ahead,
         "identity_basis": identity_basis,
         "visible_default_branch_history_is_shallow": repo_is_shallow,
         "author_prior_commits_default_branch": max_author_history_commits if truncated else len(author_commits),
@@ -2569,6 +2654,21 @@ def render_agent_prompt(case: CommitCase, gharchive_mode: str, temporal_mode: st
             f"- Temporal/complexity baseline ref: "
             f"{author_temporal_complexity_history.get('baseline_ref') or '(unknown)'}"
         )
+        lines.append(
+            f"- Temporal/complexity baseline scope: "
+            f"{author_temporal_complexity_history.get('baseline_scope') or '(unknown)'} "
+            f"(observed ref {author_temporal_complexity_history.get('observed_ref') or '(unknown)'}, "
+            f"is default branch="
+            f"{format_bool_unknown(author_temporal_complexity_history.get('observed_ref_is_default_branch'))}, "
+            f"commits ahead of baseline="
+            f"{author_temporal_complexity_history.get('observed_ref_commits_ahead_of_baseline')})"
+        )
+        if author_temporal_complexity_history.get("baseline_is_contributor_controlled"):
+            lines.append(
+                "- WARNING: the temporal baseline is branch-local, so this contributor may "
+                "have authored the history it is compared against; treat agreement with the "
+                "baseline as uninformative."
+            )
         lines.append(
             f"- Prior author commits on default-branch temporal baseline: "
             f"{format_history_count(author_temporal_complexity_history.get('author_prior_commits_default_branch'), bool(author_temporal_complexity_history.get('author_prior_commits_default_branch_is_lower_bound')), bounded_window=False)}"

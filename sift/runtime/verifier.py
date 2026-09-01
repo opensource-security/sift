@@ -372,6 +372,21 @@ def render_verifier_evidence(case: CommitCase) -> str:
             f"{author_temporal_complexity_history.get('baseline_ref') or '(unknown)'}"
         )
         lines.append(
+            f"- Temporal/complexity baseline scope: "
+            f"{author_temporal_complexity_history.get('baseline_scope') or '(unknown)'} "
+            f"(observed ref {author_temporal_complexity_history.get('observed_ref') or '(unknown)'}, "
+            f"is default branch="
+            f"{_format_bool_unknown(author_temporal_complexity_history.get('observed_ref_is_default_branch'))}, "
+            f"commits ahead of baseline="
+            f"{author_temporal_complexity_history.get('observed_ref_commits_ahead_of_baseline')})"
+        )
+        if author_temporal_complexity_history.get("baseline_is_contributor_controlled"):
+            lines.append(
+                "- WARNING: the temporal baseline is branch-local, so this contributor may "
+                "have authored the history it is compared against; treat agreement with the "
+                "baseline as uninformative."
+            )
+        lines.append(
             f"- Prior author commits on default-branch temporal baseline: "
             f"{_format_history_count(author_temporal_complexity_history.get('author_prior_commits_default_branch'), bool(author_temporal_complexity_history.get('author_prior_commits_default_branch_is_lower_bound')), bounded_window=False)}"
         )
