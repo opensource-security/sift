@@ -38,6 +38,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-path", required=True, help="Path to a local checkout or bare mirror")
     parser.add_argument("--sha", required=True, help="Commit SHA to analyze")
     parser.add_argument("--ref", required=True, help="Observed ref, e.g. refs/heads/main")
+    parser.add_argument(
+        "--default-branch-ref",
+        default="",
+        help=(
+            "Repository default branch, e.g. refs/heads/main. Overrides local detection, "
+            "which cannot be trusted in a bare mirror: its HEAD points at git's init "
+            "default whether or not that branch exists. Author history baselines are "
+            "gated on this matching --ref, so an unset or wrong value silently drops "
+            "author temporal evidence from the case."
+        ),
+    )
     parser.add_argument("--observed-at", default="", help="First-observation timestamp (ISO-8601 UTC)")
     parser.add_argument("--repo", default="", help="Optional repo identifier like owner/name")
     parser.add_argument("--runner", choices=("ollama", "anthropic", "openai"), default="anthropic")
@@ -135,6 +146,7 @@ def main() -> None:
         result_policy=result_policy if args.profile else None,
         observed_at=args.observed_at or now_utc_iso(),
         repo=args.repo,
+        default_branch_ref=args.default_branch_ref,
         max_patch_chars=max_patch_chars,
         max_files=max_files,
         max_author_commits=max_author_commits,

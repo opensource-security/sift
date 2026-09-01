@@ -591,6 +591,7 @@ def analyze_commit(
     pr_social_history: dict[str, Any] | None = None,
     full_history_repo_path: Path | None = None,
     result_policy: ResultPolicy | None = None,
+    default_branch_ref: str = "",
 ) -> dict[str, Any]:
     """Analyze a single commit and return the full structured payload.
 
@@ -656,6 +657,7 @@ def analyze_commit(
         pr_social_history=pr_social_history,
         gharchive_mode=gharchive_mode,
         full_history_repo_path=full_history_repo_path,
+        default_branch_ref=default_branch_ref,
     )
 
     anthropic_tools = None

@@ -782,14 +782,78 @@ def git_is_shallow_repository(repo_path: Path) -> bool:
     return code == 0 and out.strip() == "true"
 
 
+def branch_ref_exists(repo_path: Path, normalized_ref: str) -> bool:
+    """Does `normalized_ref` name a branch that actually exists in this repo?
+
+    A branch may live under refs/heads/ (a working clone) or only under
+    refs/remotes/<remote>/ (a bare mirror populated by fetching a refspec), so
+    both are accepted. Anything outside refs/heads/ is checked literally.
+    """
+    ref = (normalized_ref or "").strip()
+    if not ref:
+        return False
+    if run_git(repo_path, "rev-parse", "--verify", "--quiet", ref)[0] == 0:
+        return True
+    if not ref.startswith("refs/heads/"):
+        return False
+    branch = ref[len("refs/heads/") :]
+    if not branch:
+        return False
+    _, out, _ = run_git(repo_path, "for-each-ref", "--format=%(refname)", f"refs/remotes/*/{branch}")
+    return bool(out.strip())
+
+
+def _head_ref_to_branch_ref(raw_ref: str) -> str:
+    """Normalize a symbolic-ref target to refs/heads/<branch>.
+
+    `normalize_git_ref` only rewrites the `origin` remote; a mirror fetched into
+    any other remote name (`gh`, `upstream`, ...) needs the same treatment.
+    """
+    text = (raw_ref or "").strip()
+    if text.startswith("refs/remotes/"):
+        remainder = text[len("refs/remotes/") :]
+        _, _, branch = remainder.partition("/")
+        return f"refs/heads/{branch}" if branch else ""
+    return normalize_git_ref(text)
+
+
 def resolve_default_branch_ref(repo_path: Path) -> str:
+    """Best-effort default branch, or "" when it cannot be established.
+
+    Every candidate is validated against the repo before it is returned. A bare
+    repo's HEAD points at git's init default (refs/heads/master) whether or not
+    that branch was ever fetched, so an unvalidated read invents a plausible
+    branch name that does not exist. That is worse than returning nothing: the
+    phantom is compared against the observed ref, and downstream evidence is
+    silently kept or dropped on the strength of a value nobody established.
+    """
+    candidates: list[str] = []
     for ref_target in ("HEAD", "refs/remotes/origin/HEAD"):
         code, out, _ = run_git(repo_path, "symbolic-ref", ref_target)
-        if code != 0:
-            continue
-        normalized = normalize_git_ref(out.strip())
-        if normalized.startswith("refs/heads/"):
-            return normalized
+        if code == 0:
+            candidates.append(_head_ref_to_branch_ref(out))
+
+    # Any other remote's HEAD, for mirrors fetched under a non-origin name.
+    _, remote_heads, _ = run_git(
+        repo_path, "for-each-ref", "--format=%(refname)", "refs/remotes/*/HEAD"
+    )
+    for line in remote_heads.splitlines():
+        code, out, _ = run_git(repo_path, "symbolic-ref", line.strip())
+        if code == 0:
+            candidates.append(_head_ref_to_branch_ref(out))
+
+    for candidate in candidates:
+        if candidate.startswith("refs/heads/") and branch_ref_exists(repo_path, candidate):
+            return candidate
+
+    # Nothing declared a default. A repo holding exactly one branch is
+    # unambiguous; more than one is a guess, and a guess is what got us here.
+    _, branch_refs, _ = run_git(
+        repo_path, "for-each-ref", "--format=%(refname)", "refs/heads/"
+    )
+    branches = [line.strip() for line in branch_refs.splitlines() if line.strip()]
+    if len(branches) == 1:
+        return branches[0]
     return ""
 
 
@@ -1655,10 +1719,11 @@ def build_realtime_history_features(
     max_ref_history_commits: int,
     max_author_surface_commits: int,
     full_history_repo_path: Path | None = None,
+    default_branch_ref: str = "",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     history_roots = [item for item in commit_payload.get("parent_shas", []) if item]
     anchor_iso = observed_at
-    default_branch_ref = resolve_default_branch_ref(repo_path)
+    default_branch_ref = normalize_git_ref(default_branch_ref) or resolve_default_branch_ref(repo_path)
     repo_is_shallow = git_is_shallow_repository(repo_path)
 
     ref_history_raw = load_recent_commit_summaries(
@@ -2823,6 +2888,7 @@ def build_realtime_case(
     gharchive_mode: str = "omit",
     full_history_repo_path: Path | None = None,
     email_domain_intel: dict[str, Any] | None = None,
+    default_branch_ref: str = "",
 ) -> CommitCase:
     repo_path = Path(repo_path)
     if not repo_path.exists():
@@ -2862,6 +2928,7 @@ def build_realtime_case(
         max_ref_history_commits=max_ref_history_commits,
         max_author_surface_commits=max_author_surface_commits,
         full_history_repo_path=full_history_repo_path,
+        default_branch_ref=default_branch_ref,
     )
     if pr_social_history is not None:
         history["pr_social_history"] = pr_social_history
