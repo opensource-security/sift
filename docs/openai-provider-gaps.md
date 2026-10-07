@@ -12,24 +12,17 @@ sift HEAD (`2f02ead`) deleted `sift/runtime/store.py` and
 `sift/runtime/types.py`. sift stays trimmed — those modules were **not**
 restored here, preserving the standalone-release intent of `2f02ead`.
 
-Resolved by **vendoring into stars** (option 2 below): the deleted modules now
-live in `stars/runtime/_sift_vendor/` (`store.py`, `release_case.py`,
-`types.py`), recovered from `2f02ead~1`. The vendored copies import the sift
-modules that still exist (`providers`, `case_builder`, `primary`) absolutely,
-and only the removed release types are carried locally. stars' `runtime/store.py`
-and `runtime/release_case.py` shims re-export from the vendor, and the direct
-importers (`shadow_release_run.py`, `runtime/release_tracker.py`) were repointed
-off `sift.runtime.{store,release_case,types}`.
-
-Verified: with the post-deletion sift source shadowing the installed 0.1.1
-snapshot, all stars release imports resolve to `runtime._sift_vendor.*` — stars
-no longer depends on sift providing these modules. Installing sift 0.1.2 into
-the stars venv is therefore safe.
+Resolved: sift stays trimmed. Anything that still needs the release types
+should vendor `store.py`, `release_case.py` and the removed `types.py` entries
+from `2f02ead~1` rather than expect sift to provide them. The surviving modules
+(`providers`, `case_builder`, `primary`) remain importable and were the only
+pieces the removed code depended on, so a vendored copy needs no further
+changes to sift.
 
 Historical context (the two paths that were considered):
 
 1. Restore `store.py` and `release_case.py` in sift, or
-2. Vendor them into stars first. ← chosen
+2. Leave sift trimmed and vendor them where needed. ← chosen
 
 ## Scope boundaries (intentional, not gaps to fix silently)
 

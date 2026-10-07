@@ -7,8 +7,7 @@ Status: proposed (not yet executed).
 
 # feat: Gauge productionizing the signature-regression signal
 
-**Target repo:** `sift` (measurement harnesses reuse the sibling `stars`
-checkout). Prototype under review: `scripts/probe_signature_regression.py` and
+**Target repo:** `sift`. Prototype under review: `scripts/probe_signature_regression.py` and
 `docs/findings/2026-09-01-signature-regression-probe.md`. This is a
 **gauge** — a de-risking plan whose deliverable at each phase is a measurement
 and a go/no-go, not a shipped feature. Several phases can end in "do not
@@ -122,8 +121,8 @@ signal raises attacker effort, it does not bind.
 
 ## Measurements (reuse what exists)
 
-- **Q1 (marginal value)** — the `stars/scripts/experiment_evidence_impact.py`
-  FULL/BARE harness, mirrored: add a `signature_state` arm and measure verdict/
+- **Q1 (marginal value)** — a FULL/BARE evidence-impact experiment: add a
+  `signature_state` arm and measure verdict/
   confidence deltas on the ATO positives + matched negatives, and on a
   *patch-ambiguous* variant (strip or neutralize the loud loader lines, keep the
   signature evidence). This is the inverse of the patch-blind calibration we
@@ -201,7 +200,7 @@ Each phase is cheap and gates the next. Kill criteria are explicit.
   read as actionable to a human deciding on a dependency? This is the low-risk
   ship — no model, no prompt surface.
 - **P2 — Marginal-value A/B (Q1), only if Shape A is still wanted.** Add the
-  `signature_state` evidence arm to the evidence-impact harness; measure on
+  `signature_state` evidence arm to the Q1 experiment; measure on
   patch-ambiguous cases. **Gate:** demonstrable verdict/confidence lift with no
   new false positives. *If it merely restates what patch content already tells the
   model, do not add it to triage* — ship B only.
@@ -232,6 +231,6 @@ precision premise has survived contact with a broad benign corpus.
 |---|---|---|---|
 | P0 benign soak | $0 (offline git) | small (corpus assembly + probe run) | **yes — can kill everything** |
 | P1 `sift-audit` | $0 | medium (CLI + renderer) | ships the low-risk product |
-| P2 marginal-value A/B | tens of $ (model) | small (reuse harness) | gates Shape A |
+| P2 marginal-value A/B | tens of $ (model) | small (reuse Q1 setup) | gates Shape A |
 | P3 API arm | $0 compute, needs token | small | gates the network dependency |
 | P4 adversarial | $0 | small (write-up) | ship-readiness gate |

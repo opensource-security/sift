@@ -6,12 +6,12 @@ Status: proposed (not yet executed).
 
 # feat: Fold `origin/domain-provenance` into main + reconcile with `email_domain.py`
 
-**Target repo:** `sift` (U0 and U3 touch the sibling `stars` checkout). The
+**Target repo:** `sift`. The
 branch under review is `origin/domain-provenance` (6 commits, 2026-07-31 →
 2026-08-08, ~12k lines, base `ca6401a` = origin/main), preserved pre-wipe and
 explicitly quarantined "so it can be reviewed before merging". The work to
 reconcile with is main `e1378b9` (`sift/runtime/email_domain.py` + case-builder
-wiring) and stars `19bf59f` (harness signals S1–S4, measured margin −1 → +1).
+wiring; signals S1–S4, measured margin −1 → +1).
 
 ## Summary
 
@@ -31,18 +31,17 @@ never violated because composition happens through data, not imports.
 
 ## What each side has that the other lacks
 
-| capability | branch (`sift/provenance/`) | main (`email_domain.py` + stars) |
+| capability | branch (`sift/provenance/`) | main (`email_domain.py`) |
 |---|---|---|
-| RDAP | live httpx + bundled IANA bootstrap + replay cache | offline snapshot (urllib/dig, stars script) |
+| RDAP | live httpx + bundled IANA bootstrap + replay cache | offline snapshot (urllib/dig, out-of-band script) |
 | registrable-domain reduction / IDNA | `names.py` security boundary (tldextract, idna) | naive full-domain string (documented gap) |
 | resurrection semantics | band ladder + gap-activity discriminator + weak-anchor cap | S4 boolean (`registered_at > first_seen`) |
 | corroboration | CT + Wayback (`ct.py`, confidence-only) | none |
 | identity anchors | GPG UID binding dates + repo commits | repo history only |
 | forged-bot / freemail / infra taxonomy | **absent** | S1 + classification (the margin result) |
-| eval harness integration | none | stars S1–S4, margin measured, judged A/B |
 | temporal honesty | pinned `now`, replay mode | realtime/retrospective field gating |
 | case block | `author_identity_history.domain_provenance` (env-gated `SIFT_DOMAIN_PROVENANCE=1`, live) | `email_domain_context` (snapshot param, offline) |
-| timezone drift detector | in case_builder + pinned tests | (stars ranker has its own; no runtime overlap) |
+| timezone drift detector | in case_builder + pinned tests | none |
 
 Conflict geometry (verified): branch case_builder hunks at ~251/1525/2242; main's
 email-domain hunks at the import block, both builder signatures, and both
@@ -60,17 +59,17 @@ rewrote the module docs) and possibly `.gitignore`/`pyproject.toml` (trivial).
   `registrable_domain` and an optional `provenance` sub-object (band,
   `used_since`/`held_since`, gap-activity summary, `assessed_at`). Writers:
   a new provenance-side exporter (rich, requires the extra) and the existing
-  stars stdlib fetcher (v1-compatible, marks `"writer": "stdlib"`). The
+  stdlib fetch script (v1-compatible, marks `"writer": "stdlib"`). The
   runtime reader accepts both.
 - **KTD3 — resurrection converges on the band ladder; S4 is the degraded
-  mode.** When a snapshot carries a provenance band, evidence and harness key
+  mode.** When a snapshot carries a provenance band, evidence and heuristics key
   on the band (`LIKELY`/`CRITICAL`); the S4 boolean remains the stdlib
   fallback and is never deleted. The branch's two deliberate caps (weak
   author-date anchors never reach CRITICAL; corroboration never moves a band)
   are semantics the boolean cannot express — one more reason the band wins
   when present.
 - **KTD4 — S1 stays in runtime.** The forged-bot taxonomy is stdlib-pure,
-  needs no network, and the stars margin result depends on it being available
+  needs no network, and the measured margin result depends on it being available
   without the extra. Nothing ports into provenance.
 - **KTD5 — both case blocks survive short-term.** `email_domain_context`
   (offline/eval) and `author_identity_history.domain_provenance`
@@ -86,11 +85,8 @@ rewrote the module docs) and possibly `.gitignore`/`pyproject.toml` (trivial).
 
 - No changes to the branch's verdict semantics, band ladder, or security
   boundary in this plan.
-- No stars ranker-feature work (provenance verdicts as ranker columns is a
-  named deferral).
 - No new incident-fold integration (keyv/ChainDrop and mantine-datatable enter
-  as already-merged sift fixtures only; corpus folds are the research-query
-  lane's business).
+  as already-merged sift fixtures only; corpus folds are out of scope).
 - No CT-corroboration data in the snapshot yet (deferred with KTD2 room left
   for it).
 
@@ -110,12 +106,6 @@ rewrote the module docs) and possibly `.gitignore`/`pyproject.toml` (trivial).
   package manager or editor at one.**
 
 ## Implementation Units
-
-### U0. Stars preserve-branch merge (independent, docs-only)
-
-Merge `preserve/2026-08-18` into stars main (the 2026-08-08 research query +
-supersession note — the only content). Restores the query supersession chain
-(07 → 07-24 → 08-08 → 08-21) on mainline. No code.
 
 ### U1. Pre-merge review gate on the branch as-is
 
@@ -141,53 +131,33 @@ keep both sides verbatim). Post-merge gates, in order: `py_compile` across
 kept runtime stdlib-pure. Merge commit message records the quarantine
 provenance (branch, preserve date, review gate result).
 
-### U3. Stars regression against merged sift
-
-The stars `.venv` has sift editable — after U2 it sees the merge immediately.
-Re-run: oracle gate (15/15, healthy evidence states) and the four heuristic
-runs; margin must remain **+1/+1** and benign scores untouched. Any drift is a
-merge defect, found now.
-
 ### U4. Snapshot schema v2 + the two writers
 
 - `sift/provenance/export_intel.py` (or a `sift-domain --export-intel PATH`
   flag): assess the domains of a case/identity and write the v2 snapshot —
   `registrable_domain` via `names.py`, `provenance` sub-object per KTD2,
   `snapshot_version: email_domain_intel_v2`.
-- Stars `scripts/fetch_email_domain_intel.py`: stamp `"writer": "stdlib"`;
+- Stdlib fetch script: stamp `"writer": "stdlib"`;
   no other change (v1 remains valid).
 - `sift/runtime/email_domain.py`: accept v1 and v2; pass `registrable_domain`
   and band through into the role context and one prompt line
   (`provenance band: LIKELY (used_since 2021-03 < held_since 2026-06)`).
   Extend the fixture tests with a v2 snapshot case.
 
-### U5. Harness band preference + re-measure
-
-Stars `heuristic_predict` S4: prefer `provenance.band in {LIKELY, CRITICAL}`
-when the snapshot carries it; boolean fallback unchanged. Re-run the margin
-(expected: unchanged on this corpus — zero resurrection positives; the
-synthetic fixture covers the new path). Append a one-paragraph delta to
-`follow_ups/committer_email_domain_prior_art.md` §6.
-
-### U6. Docs, memory, and query hygiene
+### U6. Docs and memory
 
 - CLAUDE.md: the KTD6 switch matrix (live engine × offline snapshot).
 - Memory: mark the reconciliation done; record that keyv/ChainDrop and
   mantine-datatable are known incidents held as sift fixtures.
-- Next research-query recomposition must add **keyv/ChainDrop 2026** and
-  **icflorescu/mantine-datatable** to the do-not-re-report list (the 08-21
-  query, already handed off, predates this discovery — triage its return with
-  that in mind).
 
 ### Deferred (named, not scoped here)
 
-Case-block convergence (KTD5); CT/Wayback data in the snapshot; provenance
-verdicts as stars ranker features; wiring `sift-domain` into the GitHub Action
-beyond what the branch already did.
+Case-block convergence (KTD5); CT/Wayback data in the snapshot; wiring
+`sift-domain` into the GitHub Action beyond what the branch already did.
 
 ## Estimate / risk
 
-U0–U3 are a day's careful work dominated by U1 review reading; U4–U5 a second
+U1–U2 are a day's careful work dominated by U1 review reading; U4 a second
 day. Risks: (a) post-wipe fixture resolution failures in U1 — report, don't
 mask; mirrors may need re-capture while objects still exist upstream (the
 branch's own lesson: reaping is network-wide and silent); (b) the branch's

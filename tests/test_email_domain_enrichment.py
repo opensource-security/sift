@@ -3,7 +3,7 @@
 
 Pins the deterministic email-domain classification that separated the 2026
 megalodon forged-bot commits from genuine platform bots (measured margin
--1 -> +1 on the stars corpus, plan 2026-08-21-001), plus the two shapes that
+-1 -> +1 on the 2026 incident corpus), plus the two shapes that
 must stay correct as the module evolves:
 
   - ctx-class domain resurrection: RDAP creation date resets on

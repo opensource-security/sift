@@ -6,9 +6,7 @@ live network lookups: callers load a snapshot with ``load_email_domain_intel``
 and pass it into the case builders, which attach an ``email_domain_context``
 evidence block and a rendered prompt section.
 
-Signal design and measurement:
-stars docs/plans/2026-08-21-001-feat-email-domain-enrichment-plan.md and
-stars follow_ups/committer_email_domain_prior_art.md. The load-bearing fact
+Signal design: the load-bearing fact
 (measured on the 2026 megalodon corpus): forged automation identities sit on
 non-platform email domains (``build-system@noreply.dev``) while every genuine
 bot commits from GitHub noreply infrastructure — a lexical check that is safe

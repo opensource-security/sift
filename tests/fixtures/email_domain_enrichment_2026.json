@@ -1,6 +1,6 @@
 {
   "fixture": "email_domain_enrichment_2026",
-  "pinned_from": "megalodon_2026 incident identities + RDAP/DNS facts verified live 2026-08-21 (stars follow_ups/committer_email_domain_prior_art.md section 3)",
+  "pinned_from": "megalodon_2026 incident identities + RDAP/DNS facts verified live 2026-08-21",
   "anchor_timestamp_utc": "2026-05-18T12:50:25Z",
   "identities": {
     "megalodon_tiledesk": {"author_name": "build-bot", "author_email": "build-system@noreply.dev"},
