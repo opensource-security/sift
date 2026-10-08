@@ -1,209 +1,153 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository. `README.md` is the
+user-facing document; this file holds the rules and the things that have bitten
+us. Keep it short enough to read in full.
 
-## Project Overview
+## What this is
 
-Sift is an LLM-assisted commit triage system for supply-chain security. It analyzes Git commits and pull requests using Claude to surface security-relevant findings for maintainer review. It runs as a GitHub Action or via CLI.
+Sift is LLM-assisted commit triage for supply-chain security: it builds an
+evidence package around a Git commit or PR, asks Claude whether it looks
+malicious, and re-judges every finding with independent verifier passes. It
+ships as a GitHub Action and as three CLIs. Findings are advisory, never a
+merge gate.
 
-## Build & Development
+## Layout
 
-Uses `uv` with `hatchling` backend. The core pipeline has no external runtime
-dependencies (stdlib only). The optional `provenance` extra does — see below.
-
-```bash
-uv pip install -e .                  # core pipeline, stdlib only
-uv pip install -e '.[provenance]'    # adds domain-provenance checks
-sift-commit                          # analyze a single commit
-sift-pr                              # analyze all commits in a PR
-sift-domain                          # contributor email-domain provenance
+```
+sift/runtime/      case_builder -> primary -> verifier -> benign_challenger; analysis.py orchestrates
+sift/render/       GitHub markdown summary + check-run payload
+sift/cli/          sift-commit, sift-pr, sift-domain
+sift/profiles/     named profiles (model, effort, verifiers, result policy)
+sift/provenance/   optional extra: live email-domain provenance (RDAP, CT, GPG)
+action/            composite GitHub Action (pull_request_target, read-only analysis)
+tests/             regression fixtures pinned to real incidents; scripts, not a framework
+docs/              design notes; plans/ and findings/ named YYYY-MM-DD-NNN-slug.md
+scripts/           measurement probes; nothing here is wired into the product
+.runartifacts/     gitignored run output
 ```
 
-**The stdlib-only rule still applies to `sift/runtime/`, `sift/render/`,
-`sift/cli/`, and `sift/profiles/`.** Only `sift/provenance/` may use third-party
-packages (httpx, tldextract, idna, python-dateutil, dnspython), and the dependency
-direction is one-way: `provenance` may import `runtime`, never the reverse.
-`tests/test_provenance_extra_isolation.py` enforces this by scanning for
-module-scope imports and by importing the whole pipeline with those modules
-blocked.
+## Commands
 
-No linting configuration exists yet. There is no general test suite — `tests/`
-holds regression fixtures pinned to specific real incidents, runnable directly
-(`python tests/<file>.py`) or under pytest, with no pytest dependency required.
-Level-1 assertions are deterministic and free; level-2 assertions that call a
-live model are opt-in behind `SIFT_FIXTURE_LIVE=1`.
+```bash
+uv pip install -e .                                    # core, stdlib only
+uv pip install -e '.[provenance]'                      # adds sift-domain + live provenance
+for t in tests/test_*.py; do python "$t" || break; done # all offline by default; or: pytest tests
+sift-commit --repo-path . --sha "$(git rev-parse HEAD)" --ref refs/heads/main --profile maintainer_review_fast_v1
+```
 
-Three kinds of provenance test, and they catch different things:
+No linter is configured. Build backend is `hatchling` via `uv`.
 
-- `test_domain_provenance.py` — the two real incidents, replayed from recorded
-  RDAP/CT responses against a pinned `now`.
-- `test_provenance_scenarios.py` — the band ladder as a table of
-  (shape → expected band/role), covering the space *around* those incidents. The
-  two deliberate caps live here: a weak (author-date) anchor never reaches
-  CRITICAL, and corroboration never moves a band.
-- `test_provenance_pipeline_anchors.py` — the wiring from `case_builder` history
-  through to a verdict. Four defects once lived in that path simultaneously while
-  every incident fixture passed, because those fixtures construct their own
-  anchors and enter at `assess_domain`.
+## Hard rules
 
-Provenance tests set `SIFT_FIXTURE_REPLAY=1` for themselves. Replay is opt-in:
-production defaults to live network access, because a fixture cache that is never
-populated on a runner would make every lookup a `CacheMiss`.
+- **Stdlib only** in `sift/runtime`, `sift/render`, `sift/cli`, `sift/profiles`.
+  Only `sift/provenance` may use third-party packages (httpx, tldextract, idna,
+  python-dateutil, dnspython). Import direction is one-way: `provenance` may
+  import `runtime`, never the reverse. `tests/test_provenance_extra_isolation.py`
+  enforces both; keep it green.
+- **Fixture repositories are hostile.** The bare mirrors under
+  `$SIFT_FIXTURE_MIRRORS` or `../upstream-mirrors` carry live credential
+  stealers on `preinstall` hooks and in `.claude`/`.vscode` auto-run configs.
+  Read commit metadata and patches only. Never check one out, never point a
+  package manager or an editor at one. Mirrors are read, never written.
+- **Mirror first.** New fixtures resolve commits with
+  `tests/fixture_repos.ensure_commits(repo_slug, shas)`, never by fetching
+  GitHub directly. Disclosed malicious commits get purged upstream, and the
+  mirror is the only copy that survives. See `docs/testing.md`.
+- **Defang in prose, verbatim in records.** Attacker domains and IPs in any
+  authored `.md` are written `example[.]xyz`. Captured run output (`.json`,
+  `.log`) is left verbatim because it is evidence of what a run produced.
+- **Never track payload source.** `.runartifacts/` is gitignored. If a run
+  record carries attacker loader code, exclude the file; do not scrub it in
+  place.
+- **No secrets in the tree, ever.** Keys arrive as env vars at launch.
 
-`test_author_timezone_anomaly.py` pins the authored-at timezone detector in
-`case_builder.summarize_author_temporal_complexity_history` against two real 2026
-ATO incidents (keyv/ChainDrop, drift +420 from a US Pacific baseline; Injective,
-drift −720 from +0800 and independently confirmed by Datadog). Three things it
-guards that are easy to break:
+## Architecture in one screen
 
-- **`+0000` is not the signal.** Legitimate release automation in the keyv repo
-  commits at `+0000`, the same offset as the attack. Only drift against a
-  *per-identity* baseline separates them, and an identity with no history must
-  yield an unknown mode rather than a default of zero drift.
-- **Burst position degrades the signal.** The history window ingests the
-  attacker's own earlier commits, so `first_seen` flips after the first payload
-  commit and mode support decays 20 → 19 → 18. Any per-commit evaluation of a
-  burst is therefore *not* independent.
-- **Inversion is latent.** Once malicious commits exceed half the window the mode
-  becomes the attacker's offset and drift collapses to 0. Both incidents are far
-  short (3 commits vs the 11 needed at the default window of 20), so the test
-  pins the arithmetic rather than the symptom.
+1. **Case building** (`runtime/case_builder.py`): patch, file list,
+   sensitive-surface classification (`sensitive_surfaces.py`), ownership
+   concentration (`file_ownership.py`), author identity and timezone-drift
+   history, optional PR social context (`pr_social.py`), optional domain
+   provenance.
+2. **Primary triage** (`runtime/primary.py`): one model call returns
+   `suspicious` or `benign` with 0-3 findings across 12 finding types.
+   Unparseable output becomes `unknown`.
+3. **Verification** (`runtime/verifier.py`): three perspectives (`balanced`,
+   `skeptical`, `counterexample`) vote on each finding independently.
+   `verifier_count` controls how many instances run. Each finding gets a
+   `matrix.status` (`valid` needs 3 verifications and 0 disproofs); the
+   per-commit `findings` key is the *primary* list, and only `sift-pr`
+   computes `surviving_findings` (status `valid`/`weak`/`contested`).
+4. **Benign challenge** (`runtime/benign_challenger.py`): optional,
+   deterministic SHA256-based sampling of benign verdicts to pressure-test.
+5. **Rendering** (`render/`): JSON to markdown summary and check run. Any
+   surviving finding makes the check `neutral`, otherwise `success`; never
+   `failure`.
 
-### Fixture commit objects: mirror first
+`runtime/analysis.py` owns `analyze_commit()`, `RunnerConfig` and
+`ResultPolicy`. `runtime/providers.py` has the Anthropic, OpenAI and Ollama
+clients with rate-limit retry. `runtime/repo_tools.py` exposes the three
+read-only git tools. `runtime/assumption_triage.py` is a standalone sibling
+pass, not called by `analyze_commit`.
 
-`tests/fixture_repos.py` resolves fixture commits from a local bare mirror before
-falling back to the `~/.cache/sift-fixtures` cache and then to GitHub. Use
-`ensure_commits(repo_slug, shas)`; do not shallow-fetch from GitHub directly in a
-new fixture.
+**Defaults differ by entry point.** With no `--profile`, the CLI uses
+`claude-opus-4-6` at `max` effort with 3 verifiers; the Action's raw defaults
+are Sonnet 4 at `high`. Profiles pin model IDs that are a calibration
+snapshot, not the newest model.
 
-The reason is not speed. Malicious commits get reaped after disclosure, and the
-fixture only finds out by erroring. `icflorescu/mantine-datatable@f72462d9` has a
-full SHA published in vendor writeups and a repository that is still live, yet the
-object is purged network-wide — `upload-pack` says "not our ref", REST says 422,
-and all ten post-incident forks agree. Several keyv commits in the corpus are
-already unreachable from any branch and survive upstream only because GitHub still
-serves unreachable objects by full SHA.
+### Domain provenance (`sift/provenance/`)
 
-Mirrors are read, never written. They live at `$SIFT_FIXTURE_MIRRORS`
-(colon-separated) or `../upstream-mirrors` relative to the repo root, as
-`<name>.git`. When capturing an unreachable object, pin it with
-`git update-ref refs/mirror/<sha> <sha>` or the next `gc` in that mirror reaps it.
+Detects whether a contributor's email domain changed hands since that identity
+began using it (npm `node-ipc` 2026, PyPI `ctx` 2022). Drop-and-re-register
+resets a domain's RDAP registration date; renewal and transfer do not, so
+`used_since < held_since` means the domain left the identity's control.
 
-**These trees carry live credential stealers wired to `preinstall` hooks and to
-`.claude`/`.vscode` agent auto-run configs. The fixtures read commit metadata and
-patches only. Never check one out into a working directory, and never point a
-package manager or an editor at one.**
-
-## Architecture
-
-### Analysis Pipeline
-
-1. **Case building** (`runtime/case_builder.py`) — constructs commit context: patches, history, file ownership, path classifications
-2. **Primary triage** (`runtime/primary.py`) — Claude identifies security-relevant findings across 12 finding types (dependency_injection, build_ci_change, hidden_network_fetch, etc.) with severity levels (low/medium/high)
-3. **Verification** (`runtime/verifier.py`) — multiple verifier instances with different perspectives (balanced, skeptical, counterexample, bounded-context, security-boundary) independently vote on each finding
-4. **Benign challenge** (`runtime/benign_challenger.py`) — optionally pressure-tests benign judgments using deterministic SHA256-based sampling
-5. **Rendering** (`render/github_summary.py`, `render/github_check.py`) — converts results to GitHub markdown summaries and check-run payloads
-
-### Key Modules
-
-- `sift/runtime/analysis.py` — core orchestrator; `analyze_commit()` is the main library entrypoint. Contains `RunnerConfig` and `ResultPolicy` dataclasses.
-- `sift/runtime/providers.py` — LLM provider implementations (Anthropic, Ollama) with rate-limit retry logic. Default model: `claude-opus-4-6`.
-- `sift/runtime/repo_tools.py` — read-only git tools exposed to Claude via tool use (git_show_commit, git_show_file, git_log)
-- `sift/runtime/sensitive_surfaces.py` — pattern-based path classification (ci_workflow, build_config, dependency_manifest, release_publish)
-- `sift/runtime/email_domain.py` — offline email-domain enrichment (forged-bot domain mismatch, domain age, expired-domain resurrection); consumes a DNS/RDAP snapshot passed to the case builders as `email_domain_intel`, never does live lookups
-- `sift/runtime/file_ownership.py` — git log analysis for ownership concentration metrics
-
-### Domain Provenance (`sift/provenance/`, optional extra)
-
-Detects whether a contributor's email domain **changed hands** since that identity
-began using it — the maintainer-domain takeover vector behind npm `node-ipc` (2026)
-and PyPI `ctx` (2022). Drop-and-re-register resets a domain's RDAP registration
-date; renewal and voluntary transfer do not, so `used_since < held_since` means the
-domain left the identity's control.
-
-- `names.py` — the security boundary. Domains arrive from attacker-controlled PR
-  metadata and are then interpolated into URLs, so validation, IDNA A-label
-  normalization, registrable-domain reduction, and the skip-list all run **before**
+- `names.py` is the security boundary: domains come from attacker-controlled
+  PR metadata and are interpolated into URLs, so validation, IDNA
+  normalization, registrable-domain reduction and the skip-list all run before
   any egress.
-- `rdap.py` — IANA bootstrap (bundled snapshot in `data/`) plus registration/expiry/
-  status parsing. Every failure maps to UNKNOWN, never CLEAN.
-- `ct.py` — Certificate Transparency and Wayback corroboration. Confidence modifier
-  only; measured to be absent for the domain profile this attack targets.
-- `identity.py` — `used_since` anchors (GPG UID binding dates via `gpg
-  --list-packets`, repo-local commit dates) and the repo-local dormancy test.
-- `verdict.py` — the band ladder. The discriminator is whether the identity was
-  active *across* the ownership gap, not how long ago the gap closed.
-- Attached to the case as `history_before_commit.author_identity_history.
-  domain_provenance` and read by the triage model as evidence, not emitted as a
-  standalone finding. Off unless `SIFT_DOMAIN_PROVENANCE=1`.
+- `rdap.py`: IANA bootstrap (bundled in `data/`) plus registration parsing.
+  Every failure maps to UNKNOWN, never CLEAN.
+- `ct.py`: CT and Wayback corroboration, confidence modifier only.
+- `identity.py`: `used_since` anchors from GPG UID binding dates and repo
+  commits.
+- `verdict.py`: the band ladder. The discriminator is whether the identity was
+  active *across* the ownership gap.
+- Attached to the case as
+  `history_before_commit.author_identity_history.domain_provenance`, read as
+  evidence, never emitted as a standalone finding. Off unless
+  `SIFT_DOMAIN_PROVENANCE=1`.
 
-### Two email-domain evidence paths
+## Things that have bitten
 
-Reconciled per `docs/plans/2026-08-21-001-merge-domain-provenance-plan.md`; the
-snapshot file is the seam, and the one-way import rule is why composition
-happens through data, never through imports.
+- **The replay path shows the model far less evidence than the product
+  path.** No identity history, no timezone drift, no provenance. Any
+  measurement made on `build_replay_case` under-represents what `analyze_commit`
+  sends. Details and the full table: `docs/evidence-surfaces.md`.
+- **`email_domain_context` is built and rendered but nothing in the product
+  passes it.** `analyze_commit` calls `build_realtime_case` without
+  `email_domain_intel`. Known gap, deferred. Same doc.
+- **`+0000` is not the timezone signal.** Release bots commit at `+0000` too;
+  only drift against a per-identity baseline separates them, and an identity
+  with no history must yield unknown, not zero drift. The timezone test pins
+  the arithmetic. `docs/testing.md` has the three guards.
+- **Provenance fixtures can pass while the pipeline wiring is broken**, because
+  they construct their own anchors. `test_provenance_pipeline_anchors.py`
+  exists for that reason; do not skip it.
+- **Replay is opt-in in production.** `SIFT_FIXTURE_REPLAY=1` is set by the
+  tests for themselves; a runner with an empty cache would otherwise turn every
+  lookup into a `CacheMiss`.
 
-| | offline snapshot (`email_domain_intel` param) | live engine (`SIFT_DOMAIN_PROVENANCE=1`) |
-|---|---|---|
-| module | `sift/runtime/email_domain.py` (stdlib) | `sift/provenance/` (extra) |
-| lookups | none — reads a snapshot written out-of-band | live RDAP/CT/DNS, replayable cache |
-| unique evidence | forged-bot/freemail/infra taxonomy | band ladder, GPG anchors, gap activity |
-| case block | `email_domain_context` | `author_identity_history.domain_provenance` |
-| resurrection | S4 boolean; prefers a v2 snapshot's band when present | band ladder (authoritative) |
-| writers of the snapshot | an out-of-band stdlib fetch script (v1, `"writer": "stdlib"`) | `sift.provenance.export_intel.export_intel` (v2, adds `registrable_domain` + `provenance` band block) |
+## Environment variables
 
-Both switches are independent; either, both, or neither may be on. When both
-render into a prompt, each line names its source and observation time.
-
-### Evidence availability by case path (read before measuring sift)
-
-The two case builders carry **different evidence surfaces**, and it is easy to
-draw a wrong conclusion by measuring on the thinner one. Verified 2026-08-21:
-
-| evidence block | `build_replay_case` (replay/eval path) | `build_realtime_case` (product: `analyze_commit`) |
-|---|---|---|
-| patch + basic history (`author_first_seen_*`, prior counts) | yes | yes |
-| `author_identity_history` (name/email drift, splits) | **no** | yes |
-| `author_temporal_complexity_history` (timezone drift, cadence) | **no** | yes |
-| `domain_provenance` band | no | only if `SIFT_DOMAIN_PROVENANCE=1` (off by default) |
-| `email_domain_context` | only if caller passes `email_domain_intel` | **not passed by `analyze_commit`** (see gap below) |
-
-Consequences that have already bitten:
-
-- **The corpus batch judged runs (replay) show the LLM almost none of the
-  behavioral evidence** — no identity history, no timezone drift, no provenance.
-  The "15/15 with and without email evidence" ceiling result was measured on
-  replay cases whose only optional block was the email one; identity/timezone
-  were never in those prompts. Judged replay numbers therefore **under-represent
-  the product's evidence surface**. To measure the impact of identity/timezone
-  evidence, use the realtime path (`build_realtime_case`, as `analyze_commit`
-  does), not the replay path.
-- **Known gap: `email_domain_context` is built and prompt-rendered but NOT wired
-  into the product.** Both builders *accept* an `email_domain_intel` argument,
-  but `analyze_commit` (and thus `sift-commit`/`sift-pr`/the Action) calls
-  `build_realtime_case` **without** it — nothing in the product passes it. So a live `sift` run today sends the model no
-  email-domain evidence. Wiring it in (env-gated, mirroring
-  `SIFT_DOMAIN_PROVENANCE`) is deferred pending an evidence-impact experiment.
-
-### CLI Entry Points (defined in pyproject.toml)
-
-- `sift-commit` → `sift.cli.analyze_commit:main`
-- `sift-pr` → `sift.cli.analyze_pr:main` (supports GitHub event.json parsing)
-- `sift-domain` → `sift.cli.domain_provenance:main` (requires the `provenance`
-  extra; guards its own import and exits 2 with an install hint without it)
-
-### GitHub Action
-
-`action/action.yml` is a composite action. Key design decision: uses `pull_request_target` trigger so the action runs on the base branch (trusted code) while analyzing untrusted PR commits read-only — PR code is never checked out or executed.
-
-### Environment Variables
-
-- `SIFT_DOMAIN_PROVENANCE=1` — enable domain-provenance evidence during case
-  building. Off by default: it is the only part of case building that makes
-  outbound network requests.
-- `SIFT_FIXTURE_LIVE` — fixture cache mode for `sift/provenance/http_cache.py`.
-  Unset replays recorded responses (offline, deterministic, a miss raises); `1`
-  fetches live and records on miss; `refresh` re-records unconditionally.
-- `ANTHROPIC_API_KEY` — required for the anthropic provider
-- `GITHUB_TOKEN` — for PR social context fetching
-- `GITHUB_EVENT_PATH` / `GITHUB_WORKSPACE` — set automatically in GitHub Actions
+- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`: provider credentials.
+- `GITHUB_TOKEN`: PR social-context fetching; unauthenticated calls are
+  limited to 60 per hour.
+- `SIFT_DOMAIN_PROVENANCE=1`: enable live domain-provenance evidence. The only
+  outbound network access in case building.
+- `SIFT_FIXTURE_LIVE`: provenance HTTP cache mode. Unset replays recorded
+  responses and a miss raises; `1` fetches live and records; `refresh`
+  re-records.
+- `SIFT_FIXTURE_MIRRORS`, `SIFT_FIXTURE_CACHE`: where fixture commit objects
+  are resolved from.
+- `GITHUB_EVENT_PATH` / `GITHUB_WORKSPACE`: set by GitHub Actions.
